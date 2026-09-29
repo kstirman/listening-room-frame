@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+config.json
+state/
+.listening-room-metadata/
+*.log
+*.jpg
+*.png
+*.pdf
+.env
+.env.*
+token

@@ -1,0 +1,16 @@
+[Unit]
+Description=Listening room album artwork for Samsung Frame
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/listening-room-frame
+ExecStart=%h/listening-room-frame/.venv/bin/python %h/listening-room-frame/bridge.py --config %h/listening-room-frame/config.json --state-dir %h/.local/state/listening-room-frame
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

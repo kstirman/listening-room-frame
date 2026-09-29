@@ -1,0 +1,18 @@
+{
+  "renderer": "http://renderer.local:4005",
+  "tv": "frame.local",
+  "tv_model": "QN65LS03AAFXZA",
+  "minim_control": "http://music-server.local:9791/REPLACE-SERVER-UUID/upnp.org-ContentDirectory-1/control",
+  "local_art_hosts": [
+    "music-server.local",
+    "renderer.local"
+  ],
+  "poll_seconds": 2,
+  "idle_seconds": 120,
+  "collage_interval_seconds": 120,
+  "collage_duration_seconds": 15,
+  "history_limit": 28,
+  "library_root": "/path/to/music",
+  "library_resource_prefix": "/minimserver/*/AudirvanaLibrary/",
+  "local_art_overrides": {}
+}

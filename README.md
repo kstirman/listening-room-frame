@@ -28,7 +28,7 @@ Known limitations:
 - MinimServer's `0$items` browse support and file URL mapping are assumed. Set `library_resource_prefix` to the exact URL path prefix preceding library-relative filenames.
 - Qobuz integration parses public pages, not an authenticated catalogue API. Markup changes, region restrictions and missing credits can interrupt enrichment. Qobuz recording/composition dates are not comprehensively available.
 - Multidisc history grouping depends on consistent album titles and recognizable disc directories; it is not universal release identification.
-- Samsung firmware and Art Mode APIs vary. Switching uses the TV's normal image selection; there is no programmed crossfade.
+- Samsung firmware and Art Mode APIs vary. Switching uses the TV's normal image selection; there is no programmed crossfade. The bridge checks Art Mode directly because the TV can report standby while displaying artwork. It does not wake the TV or switch it into Art Mode.
 - Missing artwork restores the previous TV art. There is no automatic artist-portrait search.
 - Dates and other supplied metadata require source review. A populated field does not prove correctness.
 

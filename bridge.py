@@ -213,16 +213,24 @@ class Bridge:
             self.save()
 
     def television(self):
-        # Do not send wake/power/input/audio commands. Only contact Art API if TV reports on.
+        # Do not send wake/power/input/audio commands. Verify TV identity first.
         r = self.session.get(f"http://{self.config['tv']}:8001/api/v2/", timeout=4)
         r.raise_for_status()
         device = r.json()['device']
         if device.get('modelName') != self.config['tv_model']:
             raise RuntimeError('TV identity differs from configured model')
-        if device.get('PowerState') != 'on':
-            return None
-        return SamsungTVArt(self.config['tv'], port=8002, timeout=12, key_press_delay=0.1,
-                            name='Listening Room Frame', token_file=str(self.root / 'token'))
+        # Samsung may report standby while Art Mode is displaying artwork.
+        # Query Art Mode directly; never issue a wake, power or input command.
+        tv = SamsungTVArt(self.config['tv'], port=8002, timeout=12, key_press_delay=0.1,
+                          name='Listening Room Frame', token_file=str(self.root / 'token'))
+        try:
+            if tv.get_artmode() != 'on':
+                tv.close()
+                return None
+            return tv
+        except Exception:
+            tv.close()
+            raise
 
     def album_page(self, album_id):
         if album_id not in self.pages:

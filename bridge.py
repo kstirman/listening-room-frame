@@ -61,6 +61,9 @@ def metadata_values(xml):
         if item.tag.split('}')[-1] == 'item':
             result['object_id'] = item.get('id', '')
             match = re.fullmatch(r'qobuz/album/([a-zA-Z0-9]+)', item.get('parentID', ''))
+            if not match:
+                # BubbleUPnP identifies Qobuz tracks by album and track in item id.
+                match = re.fullmatch(r'qobuz/albums/([a-zA-Z0-9]+)/[0-9]+', item.get('id', ''))
             if match:
                 result['album_id'] = match[1]
         name = item.tag.split('}')[-1]

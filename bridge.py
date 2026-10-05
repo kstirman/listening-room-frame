@@ -512,6 +512,35 @@ class Bridge:
             tv.close()
 
 
+def run_bounded(action, seconds=120):
+    """Bound an entire operation, including continuously active socket waits.
+
+    Linux main-thread entry point only. Exit on expiry rather than unwinding
+    through potentially blocked TV cleanup; the user service restarts us.
+    """
+    def expired(_signum, frame):
+        # Locations only: source lines/locals could expose URLs or credentials.
+        try:
+            locations = []
+            while frame is not None and len(locations) < 8:
+                code = frame.f_code
+                locations.append(f'{Path(code.co_filename).name}:{frame.f_lineno}:{code.co_name}')
+                frame = frame.f_back
+            message = (f'Artwork operation timed out ({action.__name__}); restarting. '
+                       + 'Stack: ' + ' > '.join(reversed(locations)) + '\n')
+            os.write(2, message.encode('utf-8', errors='replace'))
+        finally:
+            os._exit(1)
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        return action()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser()
@@ -523,19 +552,23 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     bridge = Bridge(json.loads(Path(args.config).read_text()), args.state_dir)
     if args.restore:
-        bridge.restore()
+        run_bounded(bridge.restore, 30)
         return
     if args.once:
-        bridge.step()
+        run_bounded(bridge.step)
         return
     def stop(*_):
         bridge.running = False
+        # Finish or exit before the service manager forces an abort.
+        remaining, _ = signal.getitimer(signal.ITIMER_REAL)
+        if remaining > 30:
+            signal.setitimer(signal.ITIMER_REAL, 30)
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     while bridge.running:
         delay = bridge.config['poll_seconds']
         try:
-            bridge.step()
+            run_bounded(bridge.step)
         except Exception as error:
             # Avoid logging URLs, tokens or SOAP responses on request failures.
             LOG.warning('Artwork update deferred: %s', type(error).__name__)
@@ -546,7 +579,7 @@ def main():
         while bridge.running and time.monotonic() < deadline:
             time.sleep(min(.25, max(0, deadline - time.monotonic())))
     try:
-        bridge.restore()
+        run_bounded(bridge.restore, 30)
     except Exception as error:
         LOG.warning('Restore pending: %s', type(error).__name__)
 

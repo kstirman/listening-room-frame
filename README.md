@@ -4,6 +4,28 @@ Display the album you're listening to on a Samsung The Frame TV, with a rotating
 
 A Python service reads playback information from a UPnP renderer, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
 
+## On the screen
+
+These are the images rendered by Listening Room Frame for the TV: album artwork, a detailed classical view, and the recent-album collage.
+
+### Now playing
+
+![Now-playing display with Frank Sinatra album artwork, artist and recording date](docs/images/now-playing.jpg)
+
+### Classical recordings
+
+Composer, work, movement and performers appear separately, with composition and recording dates clearly distinguished.
+
+![Classical display with John Lewis Bach artwork and composer, movement, performer and date information](docs/images/classical.jpg)
+
+### Your recent listening
+
+A rotating collage brings the 28 most recent albums together.
+
+![Seven-by-four collage of recent album artwork](docs/images/recent-albums.jpg)
+
+Album artwork remains the property of its respective rights holders and is shown here to illustrate the display.
+
 ## Features
 
 - Album cover, artist, title, and recording year where available.
@@ -134,7 +156,7 @@ Making art available to JPLAY is a separate step: install a reviewed cover sidec
 
 TV state, authorization token (if issued), current images and recent covers live in the selected state directory. Recent cover history is capped and superseded application-owned TV images are cleaned up. Inventory/extracted covers and metadata backups are separate and are not size-capped.
 
-Keep `config.json`, state, tokens, library inventories, enrichment databases, downloaded artwork/booklets and private research out of Git. The repository contains no music files or downloaded album artwork. Album/track IDs are used for public Qobuz lookups; signed playback URLs are not submitted to Qobuz by this application. The app reads local audio tags, not audio playback data.
+Keep `config.json`, state, tokens, library inventories, enrichment databases, downloaded artwork/booklets and private research out of Git. The repository contains no music files. README screenshots include album artwork to illustrate the display; operational artwork caches are excluded. Album/track IDs are used for public Qobuz lookups; signed playback URLs are not submitted to Qobuz by this application. The app reads local audio tags, not audio playback data.
 
 ## Tests
 

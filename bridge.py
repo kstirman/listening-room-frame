@@ -23,6 +23,7 @@ from samsungtvws.art.art import SamsungTVArt
 
 LOG = logging.getLogger('frame-art')
 SERVICE = 'urn:schemas-upnp-org:service:AVTransport:1'
+ERROR_RETRY_SECONDS = 5
 
 
 class MetaParser(HTMLParser):
@@ -128,6 +129,7 @@ class Bridge:
         return {el.tag.split('}')[-1]: el.text for el in ET.fromstring(response.content).iter()}
 
     def playback(self):
+        self._media_fingerprint = 'missing'
         status = self.soap('GetTransportInfo').get('CurrentTransportState')
         if status != 'PLAYING':
             return status, {}
@@ -135,6 +137,7 @@ class Bridge:
         metadata = position.get('TrackMetaData')
         result = metadata_values(metadata) if metadata and metadata != 'NOT_IMPLEMENTED' else {}
         uri = position.get('TrackURI') or result.get('resource', '')
+        self._media_fingerprint = hashlib.sha256(uri.encode()).hexdigest()[:12] if uri else 'missing'
         if urlparse(uri).hostname in self.config['local_art_hosts']:
             result['resource'] = uri
             if not result.get('albumArtURI'):
@@ -353,6 +356,7 @@ class Bridge:
         return {self.state.get(name) for name in ('owned', 'album_image', 'collage_image')} - {None}
 
     def select(self, tv, content):
+        self.phase = 'tv-select'
         # Save pending selection before the write, so restart/restore can recover
         # a TV change even if the response is lost.
         self.state['pending'] = content
@@ -395,6 +399,7 @@ class Bridge:
         LOG.info('Collage displayed: %d recent albums for %ds', len(self.state['history']), self.config.get('collage_duration_seconds', 15))
 
     def cleanup(self, tv):
+        self.phase = 'tv-cleanup'
         remaining = []
         for content in set(self.state.get('garbage', [])):
             if content in self.owned_ids() or content == self.state.get('original'):
@@ -409,6 +414,7 @@ class Bridge:
         self.save()
 
     def restore(self):
+        self.phase = 'restore'
         owned = self.owned_ids()
         if self.state.get('pending'):
             owned.add(self.state['pending'])
@@ -418,6 +424,7 @@ class Bridge:
         if tv is None:
             return
         try:
+            self.phase = 'tv-state'
             if tv.get_artmode() != 'on':
                 return
             current = tv.get_current()['content_id']
@@ -436,8 +443,22 @@ class Bridge:
         finally:
             tv.close()
 
+    def observe_playback(self, status, metadata):
+        # Keep URLs, controller IDs and listening details out of diagnostics.
+        def fingerprint(value):
+            return hashlib.sha256(value.encode()).hexdigest()[:12] if value else 'missing'
+        signature = (status,
+                     fingerprint(metadata.get('object_id') or metadata.get('resource')),
+                     fingerprint(self.album_key(metadata)),
+                     getattr(self, '_media_fingerprint', fingerprint(metadata.get('resource'))))
+        if signature != getattr(self, '_last_playback_signature', None):
+            LOG.info('Playback changed: state=%s track=%s album=%s media=%s', *signature)
+            self._last_playback_signature = signature
+
     def step(self):
+        self.phase = 'playback-query'
         status, metadata = self.playback()
+        self.observe_playback(status, metadata)
         if status != 'PLAYING':
             self.blocked_album = None
             if self.stopped_at is None:
@@ -461,6 +482,7 @@ class Bridge:
             return
         if album == self.blocked_album:
             return
+        self.phase = 'metadata-lookup'
         details = self.details(metadata)
         display_key = album + ':' + json.dumps(details, sort_keys=True, ensure_ascii=False)
         display_changed = self.state.get('display_key', album + ':null') != display_key
@@ -470,10 +492,12 @@ class Bridge:
                 and now - self.last_tv_check < 30 and not due and not display_changed):
             return
         started = time.monotonic()
+        self.phase = 'tv-connect'
         tv = self.television()
         if tv is None:
             return
         try:
+            self.phase = 'tv-state'
             if tv.get_artmode() != 'on':
                 return
             current = tv.get_current()['content_id']
@@ -490,7 +514,9 @@ class Bridge:
             if not owned:
                 self.state['original'] = current
                 self.save()
+            self.phase = 'card-render'
             image, title = self.card(metadata, details)
+            self.phase = 'tv-upload'
             content = tv.upload(str(image), matte='none')
             old_album = self.state.get('album_image') or owned
             in_collage = self.state.get('view') == 'collage'
@@ -571,8 +597,10 @@ def main():
             run_bounded(bridge.step)
         except Exception as error:
             # Avoid logging URLs, tokens or SOAP responses on request failures.
-            LOG.warning('Artwork update deferred: %s', type(error).__name__)
-            delay = 60
+            LOG.warning('Artwork update deferred: %s phase=%s; retry in %ss',
+                        type(error).__name__, getattr(bridge, 'phase', 'unknown'),
+                        ERROR_RETRY_SECONDS)
+            delay = ERROR_RETRY_SECONDS
         if bridge.collage_until is not None:
             delay = min(delay, max(.1, bridge.collage_until - time.monotonic()))
         deadline = time.monotonic() + delay

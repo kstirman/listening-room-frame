@@ -63,8 +63,12 @@ def metadata_values(xml):
             result['object_id'] = item.get('id', '')
             match = re.fullmatch(r'qobuz/album/([a-zA-Z0-9]+)', item.get('parentID', ''))
             if not match:
-                # BubbleUPnP identifies Qobuz tracks by album and track in item id.
-                match = re.fullmatch(r'qobuz/albums/([a-zA-Z0-9]+)/[0-9]+', item.get('id', ''))
+                # BubbleUPnP may prefix albums with its browse/search context.
+                # Require a Qobuz root and a terminal album/track pair; never
+                # infer identity from a proxy URL or fetch the context as a URL.
+                match = re.fullmatch(
+                    r'qobuz/(?:[a-zA-Z0-9_-]+/)*albums/([a-zA-Z0-9]+)/[0-9]+',
+                    item.get('id', ''))
             if match:
                 result['album_id'] = match[1]
         name = item.tag.split('}')[-1]

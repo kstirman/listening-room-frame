@@ -7,22 +7,45 @@ from html.parser import HTMLParser
 class Tracks(HTMLParser):
  def __init__(self):
   super().__init__();self.tracks={};self.track=None;self.capture=None;self.parts=[]
+  self.depth=0;self.work='';self.group_depth=None
  def handle_starttag(self,tag,attrs):
-  a=dict(attrs)
+  if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
+  self.depth+=1
+  a=dict(attrs);classes=a.get('class','').split()
+  if a.get('id')=='playerTracks':
+   self.work='';self.track=None;self.group_depth=self.depth
   if a.get('data-track'):
    self.track=a['data-track'];self.tracks.setdefault(self.track,{})
-  classes=a.get('class','').split()
-  if self.track and ('track__item--name' in classes or 'track__info' in classes):
-   self.capture=(tag,'title' if 'track__item--name' in classes else 'credits');self.parts=[]
+   try:
+    category=json.loads(a.get('data-gtm','{}')).get('product',{}).get('category')
+    if isinstance(category,str):self.tracks[self.track]['genre']=category
+   except (ValueError,AttributeError):pass
+  if 'player__work' in classes:
+   if 'data-disk' in a:
+    self.work=''
+   else:
+    self.capture=(self.depth,'work');self.parts=[]
+  elif self.track and ('track__item--name' in classes or 'track__info' in classes):
+   self.capture=(self.depth,'title' if 'track__item--name' in classes else 'credits');self.parts=[]
  def handle_data(self,data):
   if self.capture:self.parts.append(data)
  def handle_endtag(self,tag):
-  if self.capture and tag==self.capture[0]:
+  if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
+  if self.capture and self.depth==self.capture[0]:
    value=' '.join(''.join(self.parts).split());key=self.capture[1]
-   if key=='title':self.tracks[self.track][key]=value
+   if key=='work':self.work=value
+   elif key=='title':
+    self.tracks[self.track][key]=value
+    # Only incomplete numbered movement titles inherit the preceding work.
+    # Full standalone titles in mixed recitals must remain independent.
+    if self.work and re.match(r'^(?:[IVXLCDM]+\.|[0-9]+\.|No\.\s*[0-9]+[,.:])\s*',value):
+     self.tracks[self.track].update(work=self.work,movementName=value)
    elif 'Composer' in value or 'Conductor' in value:
     self.tracks[self.track][key]=value
    self.capture=None
+  if self.depth==self.group_depth:
+   self.work='';self.track=None;self.group_depth=None
+  self.depth=max(0,self.depth-1)
 
 def normalize(metadata):
  m=dict(metadata)

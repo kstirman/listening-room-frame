@@ -16,14 +16,29 @@ python3 -m venv .venv
 
 Open **http://127.0.0.1:8765** in a browser on that computer. No music-service login or AI subscription is needed. This is still a command-line installation; there is no packaged installer yet.
 
-1. Put the Frame in Art Mode. Choose **Find TVs & Sonos rooms**. Discovery can take several seconds. It does not control music or the TV. If the TV is missing, enter its local address and choose **Check address**; the model field fills automatically.
+1. Put the Frame in Art Mode. Choose **Find my devices**. Discovery can take several seconds. It does not control music or the TV. If the TV is missing, enter its local address and choose **Check address**; the model field fills automatically.
 2. Select a playback system and room. Roon requires its already-configured extension state folder; UPnP requires the actual AVTransport control URL. See the source-specific guides.
-3. **Save configuration**, then **Check connection**. Accept the TV's connection prompt if shown. Retry after approval. Connection checks read the playback source and Art Mode; they do not show an image or turn on the TV.
-4. **Show test image** displays a generated setup card for 15 seconds and attempts to restore the original art. It does not require playing music. Manual TV selections are preserved. If the TV becomes unreachable, use **Restore original artwork** after reconnecting.
+3. **Save my choices**, then **Check connection**. Accept the TV's connection prompt if shown. Retry after approval. Connection checks read the playback source and Art Mode; they do not show an image or turn on the TV.
+4. **Show the test image** displays a generated setup card for 15 seconds and attempts to restore the original art. It does not require playing music. Manual TV selections are preserved. If the TV becomes unreachable, use **Restore original artwork** after reconnecting.
 5. Play music and choose **Start display**. Verify track and album changes. **Stop display** attempts restoration and disables playback following until you start it again.
 6. On Linux, **Enable automatic startup** installs and enables a systemd user service for future user sessions. It does not launch a second manager while this foreground one is running. Keep the process running today, or exit it and run `systemctl --user start listening-room-setup.service`. For unattended boot, configure user lingering using your distribution's instructions; this UI does not request administrator access. Verify service startup and real display behavior after reboot.
 
 The browser can close while the setup process stays running. Closing the terminal/process stops its managed display and attempts restoration. Automatic startup is not implemented for macOS. Only one configured source is followed; automatic source switching is not implemented.
+
+## Your listening room and the image preview
+
+New installations open a five-step setup guide: find the Frame, choose a room, check the TV connection/test image, preview music, and configure startup. Saved installations open Now Playing. Use **Room & display** to return to setup. Sonos has room discovery; Roon still needs its external extension and UPnP needs its control URL.
+
+Now Playing shows the **actual generated image**, including the collage when selected, plus track information and up to eight recent covers. The colors around the preview are drawn from the rendered image. The empty record-sleeve illustration is a placeholder, not music metadata or a claim about the TV. Reduced-motion preferences disable transitions.
+
+**Preview current track** reads the selected source, fetches its art and renders a card without connecting to or changing the TV. It requires a playing track with supported art. When the display is running, its worker updates the preview as it renders/selects images. Preview-only images and history live separately from the display's restoration state.
+
+- **Prepared** means the application rendered those exact image bytes. It does not mean the TV received them.
+- **TV selection confirmed at…** means the TV returned the expected content ID after selection at that time. It is not a camera feed or continuous proof of the physical screen.
+- **App control released** means the bridge released its owned artwork state during restoration; the last generated preview stays visible for reference. A manual TV selection may have been preserved.
+- **Waiting** means the current image has not been confirmed selected. The TV may need approval, Art Mode or connectivity; check the operation result.
+
+The browser fetches private JPEGs with its API token, without putting credentials in image URLs. It checks the image revision before replacing the preview so a concurrent update is not shown with the wrong revision. Recent covers contain your private listening/preview history and are not uploaded anywhere.
 
 ## Existing installations and a headless host
 
@@ -55,6 +70,9 @@ The token is generated in the manager's state directory with owner-only permissi
 | `POST /api/discover` with `{}` | Read-only Sonos room and Samsung TV discovery |
 | `POST /api/probe` with `{"host":"frame.local"}` | Read-only TV identity check |
 | `POST /api/config` with source configuration | Validate and atomically save settings while stopped |
+| `POST /api/preview` with `{}` | Render the current track locally without any TV request |
+| `GET /api/image/current` | Authenticated JPEG; `X-Image-Revision` is its SHA-256 |
+| `GET /api/cover/<64-hex-hash>.jpg` | Authenticated recent cover; filename comes from status |
 | `POST /api/check` with `{}` | Read playback and attempt Art Mode connection/authorization |
 | `POST /api/test` with `{}` | Show generated setup art for 15 seconds, then restore |
 | `POST /api/start` with `{}` | Follow playback; remember this choice for manager restart |
@@ -62,7 +80,7 @@ The token is generated in the manager's state directory with owner-only permissi
 | `POST /api/restore` with `{}` | Retry restoring the original art while stopped |
 | `POST /api/startup` with `{}` | Install/enable the Linux user service; no sudo |
 
-Discovery, probe, connection, test and restoration are asynchronous: poll `/api/status` until `busy` is false, then check `result.ok` and `result.data` or `result.message`. A successful POST means the operation started, not that it passed. `operation_id` distinguishes results. Starting the display is long-lived: `running` stays true; inspect `playback` for source health. `playback` includes a timestamp and sanitized error type; it does not prove physical TV appearance. `view`/`title` reflect saved display state, which may be stale if a request failed. Errors never include raw signed stream URLs. Private worker logs may contain album names from the bridge; inspect locally and redact before sharing.
+Discovery, probe, connection, preview, test and restoration are asynchronous: poll `/api/status` until `busy` is false, then check `result.ok` and `result.data` or `result.message`. A successful POST means the operation started, not that it passed. `operation_id` distinguishes results. `presentation` provides the image revision, prepared/confirmed timestamps and status; `recent` provides cover filenames and labels. Confirmation is historical, not continuous TV surveillance. Starting the display is long-lived: `running` stays true; inspect `playback` for source health. `playback` includes a timestamp and sanitized error type; it does not prove physical TV appearance. `view`/`title` reflect saved display state, which may be stale if a request failed. Errors never include raw signed stream URLs. Private worker logs may contain album names from the bridge; inspect locally and redact before sharing.
 
 Example Sonos config body (replace placeholders with discovered values):
 
@@ -76,6 +94,8 @@ Example Sonos config body (replace placeholders with discovered values):
 ```
 
 The API fixes polling at two seconds and idle restoration at 120 seconds. For UPnP, it accepts `renderer_control_url`, `local_art_hosts` and optional `minim_control`, `library_root`, `library_resource_prefix`. Roon accepts `roon_state_dir`; output selection still belongs to the Roon extension. The UI/API does not install dependencies, update software, change network settings or control music playback.
+
+Samsung’s [network-status guide](https://www.samsung.com/ca/support/tv-audio-video/verify-network-status-on-your-samsung-tv/) illustrates finding the TV’s IP settings; menu names vary by model.
 
 ## Diagnostics and limits
 
@@ -91,4 +111,4 @@ Discovery is best-effort IPv4 SSDP on the local network and probes at most 16 re
 
 ## Validation status
 
-The regression suite covers the bridge plus configuration validation/backups, authenticated HTTP routes, cross-origin rejection, worker serialization, service conflict handling, restoration and timeout paths. Browser checks on macOS verified live Sonos discovery, manual Frame identity lookup, configuration saving/reload, source-specific fields and unsaved-change protection. The new test-image worker and Linux startup installer have automated tests; a live test-image cycle through this UI and Linux reboot/startup acceptance remain to be verified. Sonos-to-Frame Qobuz playback and track changes were verified separately before this interface was added.
+The regression suite covers the bridge plus configuration validation/backups, authenticated HTTP routes, cross-origin rejection, worker serialization, service conflict handling, restoration and timeout paths. Browser checks on macOS verified live Sonos discovery, manual Frame identity lookup, configuration saving/reload, source-specific fields and unsaved-change protection. The record-sleeve redesign adds tested exact-image publication, verified-selection/release labels, a TV-free preview action and authenticated image routes. The new test-image worker and Linux startup installer have automated tests; a live test-image cycle through this UI and Linux reboot/startup acceptance remain to be verified. Sonos-to-Frame Qobuz playback and track changes were verified separately before this interface was added.

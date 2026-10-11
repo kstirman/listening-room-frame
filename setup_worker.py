@@ -9,7 +9,9 @@ import sys
 import time
 
 from PIL import Image, ImageDraw
-from bridge import Bridge, run_bounded
+from layouts import font
+from bridge import run_bounded
+from setup_preview import PreviewBridge as Bridge
 from setup_devices import discover_rooms, discover_tvs, probe_tv
 
 
@@ -42,7 +44,7 @@ def main():
             def observed(status, metadata):
                 observe(status, metadata)
                 write(root/'playback.json', {'transport':status,'title':metadata.get('title',''),
-                                             'album':metadata.get('album',''),'updated_at':time.time()})
+                                             'artist':metadata.get('artist',''),'album':metadata.get('album',''),'updated_at':time.time()})
             bridge.observe_playback = observed
             while not stopping[0] and os.getppid()==parent:
                 delay = config.get('poll_seconds',2)
@@ -69,6 +71,16 @@ def main():
                 return probe_tv(payload['host'])
             config = json.loads((root/'config.json').read_text())
             bridge = Bridge(config, root/'display')
+            if action == 'preview':
+                bridge = Bridge(config,root/'preview-display')
+                status, metadata = bridge.playback()
+                if status != 'PLAYING' or not bridge.album_key(metadata):
+                    return {'message':'Play a track with artwork in the selected room, then try again.', 'prepared':False}
+                bridge.card(metadata,bridge.details(metadata))
+                write(root/'playback.json', {'transport':status,'title':metadata.get('title',''),
+                                           'artist':metadata.get('artist',''),'album':metadata.get('album',''),
+                                           'updated_at':time.time()})
+                return {'message':'Preview prepared. Nothing was sent to the TV.', 'prepared':True}
             if action == 'check':
                 status, metadata = bridge.playback()
                 tv = bridge.television()
@@ -93,10 +105,15 @@ def main():
                     token.symlink_to(root/'display/token')
                 bridge = Bridge(config, trial)
                 bridge.restore()
-                picture = Image.new('RGB', (1000,1000), '#153c38')
+                picture = Image.new('RGB', (1000,1000), '#a3442e')
                 draw = ImageDraw.Draw(picture)
-                draw.ellipse((220,220,780,780), outline='#d6ba80', width=12)
-                draw.ellipse((450,450,550,550), fill='#d6ba80')
+                for radius in range(480,70,-10):
+                    draw.ellipse((720-radius,540-radius,720+radius,540+radius), outline='#342820', width=5)
+                draw.ellipse((645,465,795,615),fill='#eee9df')
+                draw.text((75,100),'HELLO,',font=font(115),fill='#f6eedf')
+                draw.text((75,225),'LISTENING',font=font(100),fill='#f6eedf')
+                draw.text((75,340),'ROOM.',font=font(115),fill='#f6eedf')
+                draw.text((75,900),'SOUND, WITH A VIEW.',font=font(25),fill='#f6eedf')
                 content = io.BytesIO(); picture.save(content, format='JPEG')
                 metadata = {'source':'sonos', 'source_album_key':'sonos:setup-test',
                             'object_id':'sonos:setup-test', 'album':'Listening Room', 'artist':'Setup',

@@ -1,9 +1,11 @@
 """Local setup UI and authenticated API. Run on the artwork host."""
 import argparse
+import hashlib
 import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import signal
@@ -64,12 +66,21 @@ class App:
             if self.process and not busy and self.process.returncode != 0 and not result:
                 result = {'ok':False,'message':'Operation exited unexpectedly. Check connections and retry.'}
             state = self.read('display/state.json', {})
+            recent = []
+            seen = set()
+            for folder in ('display','preview-display'):
+                for entry in self.read(folder+'/state.json',{}).get('history',[]):
+                    name = str(entry.get('cover','')).removeprefix('covers/')
+                    if re.fullmatch(r'[a-f0-9]{64}\.jpg',name) and name not in seen:
+                        recent.append({'image':name,'title':entry.get('title',''),'artist':entry.get('artist','')})
+                        seen.add(name)
             return {'config':self.config,'running':busy and self.operation=='run',
                     'busy':busy,'operation':self.operation,'result':result,
                     'enabled':self.settings.get('enabled',False),
                     'title':state.get('title','') if busy and self.operation=='run' else '',
                     'view':state.get('view',''), 'failure':self.last_failure,
                     'operation_id':self.started, 'playback':self.read('playback.json',{}),
+                    'presentation':self.read('presentation.json',{}),'recent':recent[:8],
                     'startup_supported':sys.platform.startswith('linux'),
                     'startup_installed':self.settings.get('startup_installed',False)}
 
@@ -184,14 +195,16 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # No URLs or credentials in HTTP logs.
 
-    def reply(self, code, data, kind='application/json'):
+    def reply(self, code, data, kind='application/json', headers=None):
         body = json.dumps(data).encode() if kind=='application/json' else data
         self.send_response(code)
         self.send_header('Content-Type',kind)
         self.send_header('Content-Length',str(len(body)))
         self.send_header('Cache-Control','no-store')
         self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('Content-Security-Policy',"default-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+        self.send_header('Content-Security-Policy',"default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+        for name,value in (headers or {}).items():
+            self.send_header(name,value)
         self.end_headers();self.wfile.write(body)
 
     def authorized(self, session=False):
@@ -213,6 +226,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path=='/api/session':
             self.reply(200,{'token':self.server.app.token})
+        elif self.path=='/api/image/current' or self.path.startswith('/api/cover/'):
+            if self.path=='/api/image/current':
+                paths=[self.server.app.root/'preview.jpg']
+            else:
+                name=self.path.removeprefix('/api/cover/')
+                if not re.fullmatch(r'[a-f0-9]{64}\.jpg',name):
+                    self.reply(404,{'error':'Not found'});return
+                paths=[self.server.app.root/folder/'covers'/name for folder in ('display','preview-display')]
+            path=next((p for p in paths if p.is_file() and not p.is_symlink()),None)
+            if path is None or path.stat().st_size>20_000_000:
+                self.reply(404,{'error':'Image not available'});return
+            content=path.read_bytes()
+            self.reply(200,content,'image/jpeg',{'X-Image-Revision':hashlib.sha256(content).hexdigest()})
         elif self.path=='/api/status':
             self.reply(200,self.server.app.status())
         elif self.path in ('/','/app.js','/style.css'):
@@ -232,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/config':result=app.save(data)
             elif self.path=='/api/stop':result=app.stop()
             elif self.path=='/api/startup':result=app.startup()
-            elif self.path in ('/api/discover','/api/probe','/api/check','/api/test','/api/restore','/api/start'):
+            elif self.path in ('/api/discover','/api/probe','/api/check','/api/preview','/api/test','/api/restore','/api/start'):
                 action=self.path.rsplit('/',1)[-1]
                 result=app.launch('run' if action=='start' else action,data)
             else:

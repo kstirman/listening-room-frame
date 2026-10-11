@@ -17,3 +17,14 @@ token
 node_modules/
 roon-state/
 now-playing.json
+
+# Optional setup manager private state if a custom state-dir is inside the repo.
+setup-state/
+api-token
+config.previous.json
+settings.json
+request.json
+result.json
+playback.json
+manager.lock
+worker.lock

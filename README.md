@@ -82,6 +82,28 @@ Known limitations:
 - Missing artwork restores the previous TV art. There is no automatic artist-portrait search.
 - Dates and other supplied metadata require source review. A populated field does not prove correctness.
 
+## Set up in your browser
+
+The optional [local setup page](SETUP.md) can discover TVs and Sonos rooms, save your choices, check the connection, show a test image, start/stop the display and enable Linux user-service startup. It also provides a [local API](SETUP.md#local-api-for-tools-and-assistants) for assistants. Sonos has the guided setup path; Roon extension pairing and advanced UPnP configuration still need their source-specific steps. Installation still requires a terminal; an AI subscription is not required.
+
+## Set up or troubleshoot with Codex
+
+Download/clone this repository and open its folder as a local project in Codex. Run the task on the artwork computer, or give it ordinary SSH access to that computer with verified host keys. A cloud-only task cannot discover devices on your home network. See the [official local-project instructions](https://learn.chatgpt.com/docs/projects#use-local-projects-for-folders-and-codebases) for attaching the folder and checking the task's access.
+
+Paste this setup request, replacing the bracketed details:
+
+> Set up Listening Room Frame from this repository on [this computer / my artwork host]. Read README.md, SETUP.md and the guide for [Sonos / Roon / UPnP]. Inspect existing artwork services first and preserve their configuration and original-art state. Install the project dependencies in a virtual environment, start the local setup interface, discover devices, and let me choose the TV and room. Verify the TV model and help me approve its connection on the TV. Save private settings outside Git. Show a reversible test image, verify artwork and track changes, and configure automatic startup on a supported host. Explain any manual steps and distinguish tested behavior from assumptions. Do not change music playback, router settings or audio services, and do not obtain administrator credentials for me.
+
+For configuration changes:
+
+> Use the local setup UI/API described in SETUP.md to change the selected room/source to [my choice]. Inspect the saved configuration and running service first. Stop the artwork worker before saving changes; preserve restoration state and keep the original configuration recoverable. Verify the new source, then resume the display. Read any API token locally without printing or pasting it into chat. Do not run two artwork services against the same TV.
+
+For troubleshooting:
+
+> Diagnose why Listening Room Frame [describe the symptom]. Read SETUP.md and inspect the saved source, service status, latest API operation result, playback timestamp, private worker log and TV connection. Determine whether discovery, source metadata, artwork retrieval, TV authorization or display selection is failing. Start with read-only checks, keep audio playback untouched, and do not delete tokens or restoration state. Redact credentials, signed URLs, device identifiers and listening history from anything shared publicly. Make a minimal fix if needed, run the relevant tests and report what was verified versus what still requires my observation.
+
+Use a locally running task with the access needed for the job; granting filesystem access does not automatically grant network or SSH access. You may need to approve network access, accept the TV prompt yourself, or personally perform an administrator-only host setup step. Do not paste passwords, TV tokens or the setup API token into the conversation. Existing `config.json` belongs to the direct bridge; the browser manager keeps its separate config under `~/.local/state/listening-room-setup`. Codex should follow the documented API rather than guess endpoints. Other local coding assistants can use the same repository guides and API.
+
 ## Install
 
 Install Python using your operating system's package manager. Install FFmpeg only if you want local audio-file metadata extraction, then:

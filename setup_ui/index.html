@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Listening Room · Setup</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><span class="mark">◉</span><div><p class="eyebrow">LISTENING ROOM</p><h1>Your music. On your Frame.</h1><p class="intro">Connect your display, choose a room, and let the artwork follow.</p></div></header>
+<section class="status"><div><span id="lamp" class="lamp"></span><strong id="status">Connecting to setup…</strong><p id="playing">Your music continues through your existing speakers.</p></div><button id="refresh" class="quiet">Refresh status</button></section>
+<p id="message" role="status" aria-live="polite"></p>
+<form id="config">
+<section class="panel"><div class="step">01</div><div class="content"><h2>Connect your Frame</h2><p>Keep the TV in Art Mode. You may need to approve a connection on its screen.</p>
+<button type="button" id="discover">Find TVs &amp; Sonos rooms</button><p id="discovery" class="hint">Discovery stays on your local network.</p>
+<label for="tvs">Discovered TVs</label><select id="tvs"><option value="">Choose a TV, or enter its address below</option></select>
+<div class="row"><div><label for="tv">TV address</label><input id="tv" placeholder="frame.local or 192.168.1.50" required autocomplete="off"></div><button type="button" id="probe">Check address</button></div>
+<label for="tv_model">TV model</label><input id="tv_model" placeholder="Filled in when the TV is found" required autocomplete="off"><p class="hint">If discovery finds nothing, use the address in your TV’s network settings. Other Samsung TVs may be discovered; only compatible Frame Art Mode models work.</p>
+</div></section>
+<section class="panel"><div class="step">02</div><div class="content"><h2>Choose what to follow</h2><label for="source">Playback system</label><select id="source"><option value="sonos">Sonos</option><option value="roon">Roon · experimental</option><option value="upnp">UPnP renderer · advanced</option></select>
+<div id="sonos-fields"><label for="rooms">Sonos room</label><select id="rooms"><option value="">Find rooms above, then choose one</option></select><p class="hint">Follows this room even when it joins a group. Music still plays through Sonos.</p></div>
+<div id="roon-fields" hidden><label for="roon_state_dir">Roon extension state folder</label><input id="roon_state_dir" placeholder="~/.local/state/listening-room-roon"><p class="hint">First install and authorize the optional extension and choose its output using the Roon guide in this project. This page does not pair Roon or choose its output.</p></div>
+<div id="upnp-fields" hidden><label for="renderer_control_url">AVTransport control URL</label><input id="renderer_control_url" placeholder="http://renderer.local:4005/AVTransport/control"><label for="local_art_hosts">Artwork hosts, separated by commas</label><input id="local_art_hosts" placeholder="music-server.local, renderer.local"><p class="hint">Use the endpoint from your renderer’s device description. Advanced library enrichment settings can be supplied through the API.</p></div>
+<button type="submit" id="save">Save configuration</button><p class="hint">Saving does not start playback or change the TV.</p></div></section>
+<section class="panel"><div class="step">03</div><div class="content"><h2>Make it yours</h2><p>Save your choices first. Check the connection, then show a test image or start following music.</p><div class="actions"><button type="button" id="check">Check connection</button><button type="button" id="test">Show test image</button><button type="button" id="start" class="primary">Start display</button></div><p class="hint">The test image returns to your original art after 15 seconds. Stop any other artwork app controlling this TV before testing or starting.</p><div class="actions"><button type="button" id="stop" class="quiet">Stop display</button><button type="button" id="restore" class="quiet">Restore original artwork</button></div></div></section>
+</form>
+<section class="panel"><div class="step">↻</div><div class="content"><h2>Keep it running</h2><p>This computer needs to remain on. You can close the browser; keep the setup process running.</p><button id="startup">Enable automatic startup</button><p id="startup-note" class="hint">Linux user service. Startup without login needs an additional system setting; reboot verification is still required.</p></div></section>
+<footer>Local setup · No music-service account is shared with this app.<br>Need help? The README includes setup and troubleshooting prompts for Codex.</footer>
+</main></body></html>

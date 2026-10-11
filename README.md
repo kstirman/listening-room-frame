@@ -4,6 +4,32 @@ Display the album you're listening to on a Samsung The Frame TV, with a rotating
 
 A Python service reads playback information from a UPnP renderer, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
 
+## Choose your playback source
+
+**JPLAY is not required.** The bridge observes the renderer's UPnP AVTransport interface; it does not connect to JPLAY or require an iPad. JPLAY and BubbleUPnP are controllers that can start playback on that renderer. Other controllers may work if their renderer supplies compatible track metadata, but have not all been tested.
+
+| Setup | Current support |
+| --- | --- |
+| JPLAY or BubbleUPnP controlling a compatible UPnP renderer | Supported by the existing UPnP input |
+| Another controller using UPnP AVTransport | Potentially compatible; verify its renderer and metadata |
+| Qobuz through that UPnP renderer | Album and track enrichment supported |
+| Local files served by MinimServer | Supported; file-level enrichment is optional |
+| Spotify app or Spotify Connect alone | Not yet supported; Spotify playback is not automatically exposed through UPnP AVTransport |
+
+A compatible Samsung Frame and a computer running the bridge are still needed. The computer handles artwork, not music playback. MinimServer and local library access are needed only for the local-library features, not for Qobuz-only playback.
+
+### Adding other music services
+
+The next architectural step is separate playback-source adapters feeding the existing artwork/TV pipeline. Each adapter should supply playback state, stable provider/album/track identifiers, title, artist, cover location and a source link. Provider-specific IDs must remain separate from Qobuz IDs; missing classical roles or recording dates must remain unknown. UPnP should remain the default so existing installations retain their behavior.
+
+Spotify's [currently-playing API](https://developer.spotify.com/documentation/web-api/reference/get-the-users-currently-playing-track) offers an account-level input independent of JPLAY, MinimServer and a UPnP renderer. A proposed adapter would use user authorization with the read-only `user-read-currently-playing` scope and token refresh; it would not control audio. This adapter is **not implemented or live-tested**.
+
+Spotify needs a distribution/design decision before it can be presented as supported:
+
+- As checked October 10, 2026, new development apps are limited to five authorized users and the app owner must have Premium. Each user's own developer app is a DIY setup, not a frictionless public login. See [Spotify's development-mode guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide).
+- Spotify requires attribution and links back, and restricts standalone metadata/artwork products. Its visual-content rules also need review for the Frame display and rotating history collage. Existing Qobuz layouts and history behavior should not simply be reused with an assumption of Spotify approval. See the [developer policy](https://developer.spotify.com/policy) and [display guidelines](https://developer.spotify.com/documentation/design).
+- A Spotify account and a representative playback device are needed for end-to-end validation. Mocked API tests alone would not establish Spotify Connect or TV compatibility.
+
 ## On the screen
 
 These are the images rendered by Listening Room Frame for the TV: album artwork, a detailed classical view, and the recent-album collage.
@@ -56,7 +82,7 @@ Known limitations:
 
 ## Install
 
-Install Python and FFmpeg using your operating system's package manager, then:
+Install Python using your operating system's package manager. Install FFmpeg only if you want local audio-file metadata extraction, then:
 
 ```sh
 git clone https://github.com/kstirman/listening-room-frame.git "$HOME/listening-room-frame"
@@ -70,7 +96,7 @@ Edit `config.json`:
 
 - `tv`: Frame hostname or IP. `tv_model`: exact model identifier expected by the safety check.
 - `renderer`: renderer HTTP base URL. Optionally set `renderer_control_url`.
-- `minim_control`: actual MinimServer ContentDirectory control URL, including its server UUID.
+- For local-library playback, `minim_control`: actual MinimServer ContentDirectory control URL, including its server UUID.
 - `local_art_hosts`: allowed local hosts serving playback resources and covers; list hostnames/IPs without schemes or ports.
 - `library_root`: filesystem location of your music, as seen by this process.
 - `library_resource_prefix`: matching MinimServer resource URL path prefix. The example defaults to `/minimserver/*/AudirvanaLibrary/`.

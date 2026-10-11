@@ -34,7 +34,7 @@ async function recent(items){
  const figures=[];
  for(const item of items){
   let url=covers.get(item.image);if(!url){try{const r=await fetch('/api/cover/'+item.image,{headers:{Authorization:'Bearer '+token}});if(!r.ok)continue;url=URL.createObjectURL(await r.blob());covers.set(item.image,url);}catch{continue;}}
-  const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption'),artist=document.createElement('span');image.src=url;image.alt=item.title;image.loading='lazy';caption.textContent=item.title;artist.textContent=item.artist;caption.append(artist);figure.append(image,caption);figures.push(figure);
+  const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption'),artist=document.createElement('span');image.src=url;image.alt=item.title;image.loading='lazy';caption.textContent=item.title;artist.textContent=item.artist;caption.append(artist);const button=document.createElement('button');button.className='sleeve-button';button.type='button';button.setAttribute('aria-label','View sleeve: '+item.title);button.append(image);button.addEventListener('click',()=>{$('sleeve-image').src=url;$('sleeve-title').textContent=item.title;$('sleeve-artist').textContent=item.artist||'';$('sleeve-dialog').showModal();});figure.append(button,caption);figures.push(figure);
  }
  if($('recent').dataset.signature!==signature)return;
  $('recent').replaceChildren(...figures);$('recent-empty').hidden=figures.length>0;$('collection-count').textContent=figures.length?String(figures.length).padStart(2,'0')+' / RECENT COVERS':'YOUR COLLECTION STARTS HERE';
@@ -54,7 +54,10 @@ function presentation(state){
  $('image-caption').textContent=p.revision?(p.kind==='collage'?'Recent-listening collage':'Actual generated artwork'):'Your next listen belongs here.';
  $('evidence-note').textContent='This is the app’s generated image, not a camera view. A confirmation records the TV’s response at that time.';
  $('running-note').textContent=state.running?'Following music. Stop returns control to your original artwork.':state.busy?'Working on '+state.operation+'…':'Previewing leaves the TV untouched.';
- if(/^#[a-f0-9]{6}$/i.test(p.accent||''))document.documentElement.style.setProperty('--accent',p.accent);
+ $('music-led').classList.toggle('active',!!(state.running&&fresh&&play.transport==='PLAYING'));
+ $('art-led').classList.toggle('active',!!p.revision);
+ $('tv-led').classList.toggle('active',p.status==='confirmed');
+ for(const id of ['music-led','art-led','tv-led']){$(id).setAttribute('role','img');$(id).setAttribute('aria-label',$(id).classList.contains('active')?'On':'Off');}
  previewImage(p).catch(()=>{});recent(state.recent||[]).catch(()=>{});
 }
 async function refresh(){
@@ -70,6 +73,7 @@ async function refresh(){
  }catch(error){message('We lost the local setup connection. Check that the setup process is running.');$('connection').textContent='DISCONNECTED';}
 }
 async function action(path,data={}){try{const result=await api(path,data);if(path==='config')dirty=false;message(result.message);await refresh();}catch(error){message(error.message);}}
+$('close-sleeve').addEventListener('click',()=>$('sleeve-dialog').close());
 $('home').addEventListener('click',event=>{event.preventDefault();showNow();});$('settings').addEventListener('click',showSetup);$('begin').addEventListener('click',showSetup);
 for(const el of document.querySelectorAll('#setup input,#setup select')){el.addEventListener('input',changed);el.addEventListener('change',changed);}
 $('source').addEventListener('change',sourceFields);$('tvs').addEventListener('change',()=>{if($('tvs').value){const tv=JSON.parse($('tvs').value);$('tv').value=tv.host;$('tv_model').value=tv.model;changed();}});

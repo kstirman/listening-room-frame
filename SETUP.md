@@ -27,9 +27,9 @@ The browser can close while the setup process stays running. Closing the termina
 
 ## Your listening room and the image preview
 
-New installations open a five-step setup guide: find the Frame, choose a room, check the TV connection/test image, preview music, and configure startup. Saved installations open Now Playing. Use **Room & display** to return to setup. Sonos has room discovery; Roon still needs its external extension and UPnP needs its control URL.
+New installations open a five-step setup guide: find the Frame, choose a room, check the TV connection/test image, preview music, and configure startup. Saved installations open Now Playing. Use **Connections** to return to setup. Sonos has room discovery; Roon still needs its external extension and UPnP needs its control URL.
 
-Now Playing shows the **actual generated image**, including the collage when selected, plus track information and up to eight recent covers. The colors around the preview are drawn from the rendered image. The empty record-sleeve illustration is a placeholder, not music metadata or a claim about the TV. Reduced-motion preferences disable transitions.
+Now Playing shows the **actual generated image**, including the collage when selected, plus track information and up to eight recent covers. The console uses a dark faceplate, warm indicators and a sleeve rack. Select a sleeve for a larger artwork-only view; this does not control music or the TV. The music indicator lights only for fresh playing metadata while the display worker is running. The TV indicator reflects the timestamped selection confirmation below, not continuous TV monitoring. The empty record-sleeve illustration is a placeholder, not music metadata or a claim about the TV. Reduced-motion preferences disable transitions.
 
 **Preview current track** reads the selected source, fetches its art and renders a card without connecting to or changing the TV. It requires a playing track with supported art. When the display is running, its worker updates the preview as it renders/selects images. Preview-only images and history live separately from the display's restoration state.
 

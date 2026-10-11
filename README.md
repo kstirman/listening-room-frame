@@ -84,7 +84,7 @@ Known limitations:
 
 ## Set up in your browser
 
-The optional [local setup page](SETUP.md) guides you through five setup steps, then opens an artwork-led Now Playing view with the actual generated TV image and recent covers. It distinguishes prepared images from timestamped TV selection confirmations. It can discover TVs and Sonos rooms, save your choices, check the connection, show a test image, start/stop the display and enable Linux user-service startup. It also provides a [local API](SETUP.md#local-api-for-tools-and-assistants) for assistants. Sonos has the guided setup path; Roon extension pairing and advanced UPnP configuration still need their source-specific steps. Installation still requires a terminal; an AI subscription is not required.
+The optional [local setup page](SETUP.md) guides you through five setup steps, then opens a listening console with the actual generated TV image, signal indicators and a browsable record-sleeve rack. It distinguishes prepared images from timestamped TV selection confirmations. It can discover TVs and Sonos rooms, save your choices, check the connection, show a test image, start/stop the display and enable Linux user-service startup. It also provides a [local API](SETUP.md#local-api-for-tools-and-assistants) for assistants. Sonos has the guided setup path; Roon extension pairing and advanced UPnP configuration still need their source-specific steps. Installation still requires a terminal; an AI subscription is not required.
 
 ## Set up or troubleshoot with Codex
 

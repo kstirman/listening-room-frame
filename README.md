@@ -2,7 +2,7 @@
 
 Display the album you're listening to on a Samsung The Frame TV, with a rotating collage of your 28 most recent albums. The TV stays in Art Mode while audio plays through your existing hi-fi.
 
-A Python service reads playback information from a UPnP renderer, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
+A Python service reads playback information from a UPnP renderer or the experimental Roon extension, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
 
 ## Choose your playback source
 
@@ -14,13 +14,14 @@ A Python service reads playback information from a UPnP renderer, finds artwork,
 | Another controller using UPnP AVTransport | Potentially compatible; verify its renderer and metadata |
 | Qobuz through that UPnP renderer | Album and track enrichment supported |
 | Local files served by MinimServer | Supported; file-level enrichment is optional |
+| Roon Server | Experimental selected-output support; [setup and validation limits](roon/README.md) |
 | Spotify app or Spotify Connect alone | Not yet supported; Spotify playback is not automatically exposed through UPnP AVTransport |
 
 A compatible Samsung Frame and a computer running the bridge are still needed. The computer handles artwork, not music playback. MinimServer and local library access are needed only for the local-library features, not for Qobuz-only playback.
 
 ### Adding other music services
 
-The next architectural step is separate playback-source adapters feeding the existing artwork/TV pipeline. Each adapter should supply playback state, stable provider/album/track identifiers, title, artist, cover location and a source link. Provider-specific IDs must remain separate from Qobuz IDs; missing classical roles or recording dates must remain unknown. UPnP should remain the default so existing installations retain their behavior.
+The bridge supports the default UPnP input and an experimental Roon input feeding the existing artwork/TV pipeline. Additional services need their own playback-source adapters. Each adapter should supply playback state, stable provider/album/track identifiers, title, artist, cover location and a source link. Provider-specific IDs must remain separate from Qobuz IDs; missing classical roles or recording dates must remain unknown. UPnP should remain the default so existing installations retain their behavior.
 
 Spotify's [currently-playing API](https://developer.spotify.com/documentation/web-api/reference/get-the-users-currently-playing-track) offers an account-level input independent of JPLAY, MinimServer and a UPnP renderer. A proposed adapter would use user authorization with the read-only `user-read-currently-playing` scope and token refresh; it would not control audio. This adapter is **not implemented or live-tested**.
 
@@ -67,7 +68,7 @@ Album artwork remains the property of its respective rights holders and is shown
 
 This is an early DIY release extracted from a working listening-room installation. It has been used with a Samsung QN65LS03AAFXZA, a CM5 Diretta UPnP renderer, MinimServer, and a Fedora NUC. The public package has automated tests; its generalized configuration has not been tested on another complete installation.
 
-You need Python 3.10+, a compatible Samsung Frame reachable on your local network, and a renderer exposing UPnP AVTransport. Local metadata extraction additionally needs `ffprobe` from FFmpeg and access to the library files. Linux/systemd is the documented deployment target. A NUC is not inherently required, but other hardware and operating systems have not been validated.
+You need Python 3.10+, a compatible Samsung Frame reachable on your local network, and either a renderer exposing UPnP AVTransport or a Roon Server with the optional Node.js extension. Local metadata extraction additionally needs `ffprobe` from FFmpeg and access to the library files. Linux/systemd is the documented deployment target. A NUC is not inherently required, but other hardware and operating systems have not been validated.
 
 Known limitations:
 
@@ -92,7 +93,9 @@ python3 -m venv .venv
 cp config.example.json config.json
 ```
 
-Edit `config.json`:
+For Roon, use [the Roon setup guide](roon/README.md) and `config.roon.example.json` instead. It needs no renderer or MinimServer settings. Existing configurations default to UPnP.
+
+Edit `config.json` for UPnP:
 
 - `tv`: Frame hostname or IP. `tv_model`: exact model identifier expected by the safety check.
 - `renderer`: renderer HTTP base URL. Optionally set `renderer_control_url`.

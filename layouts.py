@@ -101,3 +101,17 @@ def classical(cover_path, details, output):
         y=min(y,2040)
         block(dates.display_line(details),42,(175,172,166),1)
     canvas.save(output,quality=95)
+
+
+def roon(cover_path, lines, output):
+    """Preserve Roon's display lines without inventing classical roles."""
+    cover = Image.open(cover_path).convert('RGB')
+    canvas = Image.new('RGB', (3840, 2160), palette(cover))
+    art = ImageOps.contain(cover, (1500, 1500), Image.Resampling.LANCZOS)
+    canvas.paste(art, ((3840-art.width)//2, 100+(1500-art.height)//2))
+    draw = ImageDraw.Draw(canvas)
+    for text, y, size, color in zip(lines, (1710, 1840, 1960), (64, 46, 44),
+                                  ((242,239,232), (191,189,185), (170,168,163))):
+        text, f = fit_text(draw, text, 3300, size)
+        draw.text((1920, y), text, font=f, fill=color, anchor='mt')
+    canvas.save(output, quality=95)

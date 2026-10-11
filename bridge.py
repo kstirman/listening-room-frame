@@ -16,6 +16,7 @@ import layouts
 import library_metadata
 import classical
 import dates
+from roon_source import RoonSource
 
 import requests
 from PIL import Image, ImageOps
@@ -99,6 +100,10 @@ def metadata_values(xml):
 class Bridge:
     def __init__(self, config, root):
         self.config = config
+        source = config.get('source', 'upnp')
+        if source not in ('upnp', 'roon'):
+            raise ValueError('Unsupported playback source')
+        self.roon = RoonSource(config['roon_state_dir']) if source == 'roon' else None
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_file = self.root / 'state.json'
@@ -134,6 +139,10 @@ class Bridge:
 
     def playback(self):
         self._media_fingerprint = 'missing'
+        if self.roon:
+            status, metadata = self.roon.playback()
+            self._media_fingerprint = metadata.get('object_id', 'missing')
+            return status, metadata
         status = self.soap('GetTransportInfo').get('CurrentTransportState')
         if status != 'PLAYING':
             return status, {}
@@ -176,6 +185,8 @@ class Bridge:
 
     @staticmethod
     def album_key(metadata):
+        if metadata.get('source') == 'roon':
+            return metadata.get('source_album_key')
         if metadata.get('album_id'):
             return 'qobuz:' + metadata['album_id']
         if metadata.get('albumArtURI'):
@@ -252,6 +263,8 @@ class Bridge:
         return self.pages[album_id]
 
     def details(self, metadata):
+        if metadata.get('source') == 'roon':
+            return {'roon_lines': metadata['roon_lines']}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
         if track in self.detail_cache:
             return self.detail_cache[track]
@@ -301,7 +314,9 @@ class Bridge:
             entry = next((e for e in self.state['history'] if e['key'] == album), None)
         else:
             image, title = self.root / 'current-cover.jpg', entry['title']
-        if details and details.get('work') and entry:
+        if metadata.get('source') == 'roon' and entry:
+            layouts.roon(self.root / entry['cover'], metadata['roon_lines'], image)
+        elif details and details.get('work') and entry:
             layouts.classical(self.root / entry['cover'], details, image)
         elif entry:
             title = (details or {}).get('display_album') or title
@@ -313,7 +328,9 @@ class Bridge:
         album_id = metadata.get('album_id')
         title = metadata.get('album', '')
         artist = metadata.get('albumArtist') or metadata.get('artist', '')
-        if album_id:
+        if metadata.get('source') == 'roon':
+            content = self.roon.cover(metadata)
+        elif album_id:
             parser = MetaParser()
             parser.feed(self.album_page(album_id))
             url = parser.meta.get('og:image', '')
@@ -336,11 +353,13 @@ class Bridge:
             # Known home music hosts only; never use the signed audio resource URL.
             if parsed.scheme not in ('http', 'https') or parsed.hostname not in self.config['local_art_hosts']:
                 raise ValueError('No supported local cover URL')
-        r = self.session.get(url, timeout=15)
-        r.raise_for_status()
-        if len(r.content) > 20_000_000:
+        if metadata.get('source') != 'roon':
+            r = self.session.get(url, timeout=15)
+            r.raise_for_status()
+            content = r.content
+        if len(content) > 20_000_000:
             raise ValueError('Cover exceeds size limit')
-        cover = ImageOps.exif_transpose(Image.open(io.BytesIO(r.content))).convert('RGB')
+        cover = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert('RGB')
         key = self.album_key(metadata)
         filename = 'covers/' + hashlib.sha256(key.encode()).hexdigest() + '.jpg'
         cover.save(self.root / filename, quality=95)

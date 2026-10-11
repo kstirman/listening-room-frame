@@ -1,0 +1,68 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      node-roon-api:
+        specifier: git+https://github.com/RoonLabs/node-roon-api.git#055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8
+        version: https://codeload.github.com/RoonLabs/node-roon-api/tar.gz/055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8
+      node-roon-api-image:
+        specifier: git+https://github.com/RoonLabs/node-roon-api-image.git#a5f0efaf2dfb5457e91abe326c3a40d865131d32
+        version: https://codeload.github.com/RoonLabs/node-roon-api-image/tar.gz/a5f0efaf2dfb5457e91abe326c3a40d865131d32
+      node-roon-api-transport:
+        specifier: git+https://github.com/RoonLabs/node-roon-api-transport.git#2ee60008a4cdb90c34ff3de58bb4b949067f1d20
+        version: https://codeload.github.com/RoonLabs/node-roon-api-transport/tar.gz/2ee60008a4cdb90c34ff3de58bb4b949067f1d20
+
+packages:
+
+  node-roon-api-image@https://codeload.github.com/RoonLabs/node-roon-api-image/tar.gz/a5f0efaf2dfb5457e91abe326c3a40d865131d32:
+    resolution: {gitHosted: true, integrity: sha512-OG12BBFoYtWWiAm7DmDfTdTx6q4Am5y9DsO3Of08kY3qrjKy5YlxYHTqdn3CyrX47nL6YesbRMfp3DqjC2udTg==, tarball: https://codeload.github.com/RoonLabs/node-roon-api-image/tar.gz/a5f0efaf2dfb5457e91abe326c3a40d865131d32}
+    version: 1.0.0
+
+  node-roon-api-transport@https://codeload.github.com/RoonLabs/node-roon-api-transport/tar.gz/2ee60008a4cdb90c34ff3de58bb4b949067f1d20:
+    resolution: {gitHosted: true, integrity: sha512-XhFE2brw33EWBo3Oo7Aqf5RYqIBK6w/ofnweCZAPhtdfYLEr+WW/w/nl+csRj+itzXQC0BgL3/YYXLcBQYzG4A==, tarball: https://codeload.github.com/RoonLabs/node-roon-api-transport/tar.gz/2ee60008a4cdb90c34ff3de58bb4b949067f1d20}
+    version: 2.0.1
+
+  node-roon-api@https://codeload.github.com/RoonLabs/node-roon-api/tar.gz/055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8:
+    resolution: {gitHosted: true, integrity: sha512-f/H0Fg5wr46HDjbbTz7MtcPOC9LeaxdAtUdkIocB3xfgRI1VyEbRlyF0jCr6g9/OF4muz5RvoauHu5fEGNT/aw==, tarball: https://codeload.github.com/RoonLabs/node-roon-api/tar.gz/055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8}
+    version: 1.2.3
+
+  node-uuid@1.4.8:
+    resolution: {integrity: sha512-TkCET/3rr9mUuRp+CpO7qfgT++aAxfDRaalQhwPFzI9BY/2rCDn6OfpZOVggi1AXfTPpfkTrg5f5WQx5G1uLxA==}
+    deprecated: Use uuid module instead
+    hasBin: true
+
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+snapshots:
+
+  node-roon-api-image@https://codeload.github.com/RoonLabs/node-roon-api-image/tar.gz/a5f0efaf2dfb5457e91abe326c3a40d865131d32: {}
+
+  node-roon-api-transport@https://codeload.github.com/RoonLabs/node-roon-api-transport/tar.gz/2ee60008a4cdb90c34ff3de58bb4b949067f1d20: {}
+
+  node-roon-api@https://codeload.github.com/RoonLabs/node-roon-api/tar.gz/055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8:
+    dependencies:
+      node-uuid: 1.4.8
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  node-uuid@1.4.8: {}
+
+  ws@8.22.0: {}

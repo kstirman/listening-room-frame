@@ -1,0 +1,11 @@
+{
+  "source": "roon",
+  "roon_state_dir": "~/.local/state/listening-room-roon",
+  "tv": "frame.local",
+  "tv_model": "QN65LS03AAFXZA",
+  "poll_seconds": 2,
+  "idle_seconds": 120,
+  "collage_interval_seconds": 120,
+  "collage_duration_seconds": 15,
+  "history_limit": 28
+}

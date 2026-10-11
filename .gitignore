@@ -13,3 +13,7 @@ state/
 .env
 .env.*
 token
+
+node_modules/
+roon-state/
+now-playing.json

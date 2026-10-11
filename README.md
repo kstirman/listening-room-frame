@@ -2,7 +2,7 @@
 
 Display the album you're listening to on a Samsung The Frame TV, with a rotating collage of your 28 most recent albums. The TV stays in Art Mode while audio plays through your existing hi-fi.
 
-A Python service reads playback information from a UPnP renderer or the experimental Roon extension, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
+A Python service reads playback information from a UPnP renderer, a selected Sonos room, or the experimental Roon extension, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
 
 ## Choose your playback source
 
@@ -15,6 +15,7 @@ A Python service reads playback information from a UPnP renderer or the experime
 | Qobuz through that UPnP renderer | Album and track enrichment supported |
 | Local files served by MinimServer | Supported; file-level enrichment is optional |
 | Roon Server | Experimental selected-output support; [setup and validation limits](roon/README.md) |
+| Sonos room | Experimental read-only input; [setup and validation limits](SONOS.md) |
 | Spotify app or Spotify Connect alone | Not yet supported; Spotify playback is not automatically exposed through UPnP AVTransport |
 
 A compatible Samsung Frame and a computer running the bridge are still needed. The computer handles artwork, not music playback. MinimServer and local library access are needed only for the local-library features, not for Qobuz-only playback.
@@ -68,11 +69,11 @@ Album artwork remains the property of its respective rights holders and is shown
 
 This is an early DIY release extracted from a working listening-room installation. It has been used with a Samsung QN65LS03AAFXZA, a CM5 Diretta UPnP renderer, MinimServer, and a Fedora NUC. The public package has automated tests; its generalized configuration has not been tested on another complete installation.
 
-You need Python 3.10+, a compatible Samsung Frame reachable on your local network, and either a renderer exposing UPnP AVTransport or a Roon Server with the optional Node.js extension. Local metadata extraction additionally needs `ffprobe` from FFmpeg and access to the library files. Linux/systemd is the documented deployment target. A NUC is not inherently required, but other hardware and operating systems have not been validated.
+You need Python 3.10+, a compatible Samsung Frame reachable on your local network, and a renderer exposing UPnP AVTransport, a Sonos speaker with the optional SoCo dependency, or a Roon Server with the optional Node.js extension. Local metadata extraction additionally needs `ffprobe` from FFmpeg and access to the library files. Linux/systemd is the documented deployment target. A NUC is not inherently required, but other hardware and operating systems have not been validated.
 
 Known limitations:
 
-- Device discovery and a setup wizard are not included. TV, renderer and MinimServer endpoints must be configured manually; static DHCP leases are helpful.
+- Sonos has a room discovery command; a setup wizard and discovery for other inputs are not included. TV, renderer and MinimServer endpoints must be configured manually; static DHCP leases are helpful.
 - Renderer service paths and metadata vary. The default AVTransport path matches the tested renderer. Use `renderer_control_url` for a different full control URL from the device description.
 - MinimServer's `0$items` browse support and file URL mapping are assumed. Set `library_resource_prefix` to the exact URL path prefix preceding library-relative filenames.
 - Qobuz integration parses public pages, not an authenticated catalogue API. Markup changes, region restrictions and missing credits can interrupt enrichment. Qobuz recording/composition dates are not comprehensively available.

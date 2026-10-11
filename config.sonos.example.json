@@ -3,5 +3,6 @@
   "sonos_uid": "REPLACE-WITH-DISCOVERED-UID",
   "tv": "frame.local",
   "poll_seconds": 2,
-  "idle_seconds": 120
+  "idle_seconds": 120,
+  "tv_model": "QN65LS03AAFXZA"
 }

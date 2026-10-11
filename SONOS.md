@@ -12,7 +12,7 @@ Use Python 3.10+ and the virtual environment from the main README:
 cp -n config.sonos.example.json config.json
 ```
 
-Set `sonos_uid` to the chosen room's discovered UID and `tv` to the Frame hostname/address. The UID survives a room rename; replacing a speaker requires a new selection. Discovery output contains private device identifiers: do not commit it. A stereo pair should use its primary room, not a hidden satellite.
+Set `sonos_uid` to the chosen room's discovered UID and `tv` and `tv_model` to your Frame hostname/address and exact model identifier. The UID survives a room rename; replacing a speaker requires a new selection. Discovery output contains private device identifiers: do not commit it. A stereo pair should use its primary room, not a hidden satellite.
 
 Run on the same reachable local network; multicast discovery across VLANs is not guaranteed. No matching speaker means stopped, never an automatic switch to another room. Discovery retries at most every 30 seconds when disconnected. Normal metadata polling defaults to two seconds, with four-second Sonos request timeouts.
 
@@ -34,6 +34,6 @@ History groups by album, artist and artwork URL, an approximate identity: compil
 
 ## Validation
 
-Automated tests cover explicit room selection, group-coordinator changes, same-album track refresh, missing artwork, radio-art fallback, disconnection/reconnection, download limits, unsafe URL rejection, and bridge-to-fake-TV updates/restoration. Local discovery and read-only stopped-state queries have been verified on real speakers. Live music metadata, regrouping during playback, service-specific artwork and Sonos-to-Frame behavior remain unverified.
+Automated tests cover explicit room selection, group-coordinator changes, same-album track refresh, missing artwork, radio-art fallback, disconnection/reconnection, download limits, unsafe URL rejection, and bridge-to-fake-TV updates/restoration. Local discovery, Qobuz playback metadata/artwork, rendering and a Sonos-to-Frame upload have been verified on one installation. The tester confirmed the displayed artwork/title and title updates when skipping tracks. Live pause/restoration, regrouping, reconnect recovery and other services remain unverified.
 
 For a first live test: play two tracks from one album, change albums, pause longer than the idle timeout, then resume. Check the title and artwork on the Frame at every step. Separately test grouping and disconnect/reconnect. Report the Sonos input/service used; success with one service does not certify others.

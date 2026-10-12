@@ -248,8 +248,12 @@ movement strip: segment widths reflect durations, the current movement is
 highlighted, and a numbered legend gives each length. This works across albums;
 there are no album-specific rules. Grouping requires a shared work heading or
 explicit work-and-numbered-movement titles, consecutive numbering from one,
-and lengths for every listed movement. Repeated headings remain separate.
-Incomplete, ambiguous or more-than-16-movement groups show duration alone.
+and lengths for every listed movement. Adjacent classical tracks sharing an exact
+`Work: section` prefix and composer can also form unnumbered parts, labeled
+“Part X of Y.” Standalone colon titles, pop titles, duplicate sections and gaps
+in explicitly numbered movements do not qualify. Repeated headings remain separate.
+Incomplete or ambiguous groups show duration alone. Numbered movement groups
+are limited to16; explicitly named part groups can contain up to128 tracks.
 The strip describes the album's listed work sequence, not shuffle/queue order.
 
 Sonos and Roon currently provide duration only: their now-playing adapters do

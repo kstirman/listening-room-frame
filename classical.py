@@ -93,3 +93,35 @@ def file_tags(resource,root,resource_prefix="/minimserver/*/AudirvanaLibrary/"):
   key='movementNumber' if re.fullmatch(r'\d+(?:/\d+)?',tags['movement']) else 'movementName'
   result.setdefault(key,tags['movement'])
  return result
+
+
+def catalog(tracks):
+ """Normalize catalog rows; recognize explicit shared classical work prefixes.
+
+ Only adjacent rows with the same composer and exact 'Work: section' prefix
+ provide evidence for unnumbered parts. A colon on one title is insufficient.
+ """
+ ordered={}
+ for key,item in tracks.items():
+  row=dict(item);details=normalize(item) or {}
+  if details.get('composer'):row['composer']=details['composer']
+  if details.get('work') and details.get('movement'):
+   row.update(work=details['work'],movementName=details['movement'])
+  ordered[key]=row
+ entries=list(ordered.items())
+ def prefix(row):
+  # Genre/explicit classical metadata, composer and a nonempty named section
+  # must all be present; never group pop titles just because they use a colon.
+  if not normalize(row) or not row.get('composer'):return None
+  work,sep,section=row.get('title','').partition(': ')
+  return (work,row['composer'],row.get('work_scope')) if sep and work.strip() and section.strip() else None
+ start=0
+ while start<len(entries):
+  identity=prefix(entries[start][1]);end=start+1
+  while identity and end<len(entries) and prefix(entries[end][1])==identity:end+=1
+  if identity and end-start>=2:
+   for _,row in entries[start:end]:
+    work,_,section=row['title'].partition(': ')
+    row.update(work=work,movementName=section,part_group=True)
+  start=end
+ return ordered

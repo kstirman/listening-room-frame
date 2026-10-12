@@ -294,12 +294,8 @@ class Bridge:
                     value = record.get('releaseDate') or record.get('datePublished')
                     if value:enriched.setdefault('releaseDate', value)
             enriched.update(parser.tracks.get(track.rsplit('/', 1)[-1], {}))
-            ordered = {}
-            for key, item in parser.tracks.items():
-                normalized = classical.normalize(item) or {}
-                ordered[key] = dict(item)
-                if normalized.get('work') and normalized.get('movement'):
-                    ordered[key].update(work=normalized['work'], movementName=normalized['movement'])
+            ordered = classical.catalog(parser.tracks)
+            enriched.update(ordered.get(track.rsplit('/', 1)[-1], {}))
             work_timing = timing.composition(ordered, track.rsplit('/', 1)[-1])
         elif metadata.get('resource') and self.config.get('library_root'):
             try:

@@ -50,7 +50,7 @@ def number(track):
 
 
 def composition(tracks, current):
-    """Only a contiguous, fully timed, numbered work starting at movement one.
+    """Contiguous, fully timed numbered movements or explicit named work parts.
 
     Tracks must be in authoritative album order; never sort a playback queue or
     combine repeated performances by work title alone. Scope IDs isolate headings.
@@ -61,7 +61,7 @@ def composition(tracks, current):
     pos = next(i for i, (key, _) in enumerate(entries) if key == current)
     target = entries[pos][1]
     work = target.get('work')
-    if not work or not number(target):
+    if not work or not (number(target) or target.get('part_group')):
         return None
     def same(item):
         return (item.get('work') == work and
@@ -75,8 +75,15 @@ def composition(tracks, current):
         right += 1
     group = [item for _, item in entries[left:right]]
     lengths = [seconds(item.get('duration_seconds')) for item in group]
-    if not 2 <= len(group) <= 16 or not all(lengths):
+    if not 2 <= len(group) <= 128 or not all(lengths):
         return None
-    if [number(item) for item in group] != list(range(1, len(group) + 1)):
-        return None
-    return {'index': pos - left, 'durations': lengths}
+    numbers = [number(item) for item in group]
+    if numbers == list(range(1, len(group) + 1)) and len(group) <= 16:
+        return {'index': pos - left, 'durations': lengths}
+    if all(item.get('part_group') for item in group) and any(n is None for n in numbers):
+        titles = [item.get('movementName') for item in group]
+        # Duplicate sections can signal concatenated performances: omit rather
+        # than claim they are one complete performance.
+        if len(set(titles)) == len(titles):
+            return {'index': pos - left, 'durations': lengths, 'label': 'Part'}
+    return None

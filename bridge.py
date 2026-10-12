@@ -13,6 +13,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import layouts
+import timing
 import library_metadata
 import classical
 import dates
@@ -95,6 +96,8 @@ def metadata_values(xml):
                 result[key] = value
         if name == 'res' and item.text:
             result['resource'] = item.text
+            duration = timing.seconds(item.get('duration'))
+            if duration: result['duration_seconds'] = duration
     return result
 
 
@@ -151,6 +154,8 @@ class Bridge:
         position = self.soap('GetPositionInfo')
         metadata = position.get('TrackMetaData')
         result = metadata_values(metadata) if metadata and metadata != 'NOT_IMPLEMENTED' else {}
+        duration = timing.seconds(position.get('TrackDuration'))
+        if duration: result['duration_seconds'] = duration
         uri = position.get('TrackURI') or result.get('resource', '')
         self._media_fingerprint = hashlib.sha256(uri.encode()).hexdigest()[:12] if uri else 'missing'
         if urlparse(uri).hostname in self.config['local_art_hosts']:
@@ -267,11 +272,13 @@ class Bridge:
     def details(self, metadata):
         if metadata.get('source') in ('roon', 'sonos'):
             field = metadata['source'] + '_lines'
-            return {field: metadata[field]}
+            return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
-        if track in self.detail_cache:
-            return self.detail_cache[track]
+        cache_key = (track, timing.seconds(metadata.get('duration_seconds')))
+        if cache_key in self.detail_cache:
+            return self.detail_cache[cache_key]
         enriched = dict(metadata)
+        work_timing = None
         if metadata.get('album_id'):
             parser = classical.Tracks()
             page = self.album_page(metadata['album_id'])
@@ -283,6 +290,13 @@ class Bridge:
                     value = record.get('releaseDate') or record.get('datePublished')
                     if value:enriched.setdefault('releaseDate', value)
             enriched.update(parser.tracks.get(track.rsplit('/', 1)[-1], {}))
+            ordered = {}
+            for key, item in parser.tracks.items():
+                normalized = classical.normalize(item) or {}
+                ordered[key] = dict(item)
+                if normalized.get('work') and normalized.get('movement'):
+                    ordered[key].update(work=normalized['work'], movementName=normalized['movement'])
+            work_timing = timing.composition(ordered, track.rsplit('/', 1)[-1])
         elif metadata.get('resource') and self.config.get('library_root'):
             try:
                 enriched.update(classical.file_tags(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
@@ -294,6 +308,9 @@ class Bridge:
             except Exception as error:
                 LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
         details = classical.normalize(enriched)
+        duration = timing.seconds(enriched.get('duration_seconds'))
+        if duration: details = dict(details or {}, duration_seconds=duration)
+        if work_timing: details = dict(details or {}, composition=work_timing)
         date_fields = dates.extract(enriched, details)
         if date_fields:
             details = dict(details or {}, **date_fields)
@@ -306,7 +323,7 @@ class Bridge:
                 details = dict(details or {}, **captions)
         if len(self.detail_cache) >= 128:
             self.detail_cache.pop(next(iter(self.detail_cache)))
-        self.detail_cache[track] = details
+        self.detail_cache[cache_key] = details
         return details
 
     def card(self, metadata, details):
@@ -318,13 +335,13 @@ class Bridge:
         else:
             image, title = self.root / 'current-cover.jpg', entry['title']
         if metadata.get('source') in ('roon', 'sonos') and entry:
-            layouts.roon(self.root / entry['cover'], metadata[metadata['source'] + '_lines'], image)
+            layouts.roon(self.root / entry['cover'], metadata[metadata['source'] + '_lines'], image, duration_seconds=(details or {}).get('duration_seconds'))
         elif details and details.get('work') and entry:
             layouts.classical(self.root / entry['cover'], details, image)
         elif entry:
             title = (details or {}).get('display_album') or title
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
-            layouts.current(self.root / entry['cover'], title, artist, image, date_line=dates.display_line(details))
+            layouts.current(self.root / entry['cover'], title, artist, image, date_line=dates.display_line(details), duration_seconds=(details or {}).get('duration_seconds'))
         return image, title
 
     def cover(self, metadata):

@@ -47,3 +47,14 @@ test('timed out image request can retry; old completion cannot replace newer one
   calls[1](false,'image/jpeg',Buffer.from('new'));assert.notEqual(p.cached,'');
  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('track length survives snapshots; seek does not alter display identity', () => {
+ const s=new ZoneState('speaker'); s.pair('core'); const z=zone();
+ z.now_playing.length=582; z.now_playing.seek_position=10;
+ s.update('Subscribed',{zones:[z]}); const first=s.snapshot();
+ assert.equal(first.duration_seconds,582);
+ z.now_playing.seek_position=80; s.update('Changed',{zones_changed:[z]});
+ assert.equal(s.snapshot().track_key,first.track_key);
+ for(const value of [0,-1,Infinity,'582',null]){
+  z.now_playing.length=value;s.update('Changed',{zones_changed:[z]});assert.equal(s.snapshot().duration_seconds,null);
+ }
+});

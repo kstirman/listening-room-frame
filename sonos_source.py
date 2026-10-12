@@ -1,5 +1,6 @@
 """Read-only Sonos room metadata through optional SoCo. Never controls playback."""
 import hashlib
+import timing
 import json
 import logging
 import time
@@ -64,6 +65,7 @@ class SonosSource:
             return 'PLAYING', {'source': 'sonos', 'source_album_key': album,
                 'object_id': key([album, lines[0], info.get('uri', '')]),
                 'sonos_cover': art, 'sonos_lines': lines,
+                'duration_seconds': timing.seconds(info.get('duration')),
                 'title': lines[0], 'artist': lines[1], 'album': lines[2] or lines[0]}
         except Exception as exc:
             # Do not emit exception messages: devices can include signed stream URLs.

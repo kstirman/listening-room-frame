@@ -54,6 +54,12 @@ class SonosTests(unittest.TestCase):
         self.source.discovered_at -= 31
         self.assertEqual(self.source.playback()[0], 'PLAYING')
 
+    def test_duration_from_selected_coordinator(self):
+        self.info['duration'] = '00:09:42'
+        self.assertEqual(self.source.playback()[1]['duration_seconds'], 582)
+        self.info['duration'] = '00:00:00'
+        self.assertIsNone(self.source.playback()[1]['duration_seconds'])
+
     def test_missing_art(self):
         self.info['album_art'] = ''
         self.assertEqual(self.source.playback(), ('PLAYING', {}))

@@ -235,3 +235,28 @@ The Linux service bounds each complete artwork update to 120 seconds, including 
 This also covers TV event streams that keep a socket active without delivering the requested response. Recovery uses the existing saved artwork state; an upload interrupted before its returned ID is saved may leave an orphan image on the TV. The deadline is a recovery safeguard, not proof of the cause of every display freeze.
 
 Transient update failures retry after five seconds so an old album does not remain displayed for a full minute after a brief connection error. Each retry polls playback again. Error diagnostics identify the operation phase; playback changes log hashed track/album identifiers and transport state, never signed stream URLs or raw metadata. These distinguish changing renderer metadata from a stalled display without exposing source credentials.
+
+
+### Track duration and composition context
+
+Cards show the current track's total length when supplied by UPnP, Sonos,
+Roon, a Qobuz album page, or local file metadata. Unknown/live-stream lengths
+stay blank. There is no elapsed-time animation or extra per-second TV update.
+
+For Qobuz through UPnP, an ordered, fully timed work group adds a static
+movement strip: segment widths reflect durations, the current movement is
+highlighted, and a numbered legend gives each length. This works across albums;
+there are no album-specific rules. Grouping requires a shared work heading or
+explicit work-and-numbered-movement titles, consecutive numbering from one,
+and lengths for every listed movement. Repeated headings remain separate.
+Incomplete, ambiguous or more-than-16-movement groups show duration alone.
+The strip describes the album's listed work sequence, not shuffle/queue order.
+
+Sonos and Roon currently provide duration only: their now-playing adapters do
+not supply a complete composition catalog. Local-file playback also shows
+only duration; this release does not scan sibling files to invent work groups.
+Roon users must update/restart the Node extension as well as the Python bridge
+for lengths to appear. Older extension snapshots remain compatible.
+
+Metadata references: [Roon transport length](https://roonlabs.github.io/node-roon-api/other_node-roon-api-transport_lib.js.html),
+[SoCo current-track fields](https://soco.readthedocs.io/en/latest/api/soco.core.html#soco.core.SoCo.get_current_track_info).

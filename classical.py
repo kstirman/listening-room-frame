@@ -1,5 +1,6 @@
 """Conservative source metadata extraction. No inferred performer roles."""
 import re,json,subprocess
+import timing
 from pathlib import Path
 from urllib.parse import urlparse,unquote
 from html.parser import HTMLParser
@@ -7,7 +8,7 @@ from html.parser import HTMLParser
 class Tracks(HTMLParser):
  def __init__(self):
   super().__init__();self.tracks={};self.track=None;self.capture=None;self.parts=[]
-  self.depth=0;self.work='';self.group_depth=None
+  self.depth=0;self.work='';self.group_depth=None;self.work_scope=0
  def handle_starttag(self,tag,attrs):
   if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
   self.depth+=1
@@ -21,10 +22,13 @@ class Tracks(HTMLParser):
     if isinstance(category,str):self.tracks[self.track]['genre']=category
    except (ValueError,AttributeError):pass
   if 'player__work' in classes:
+   self.work_scope+=1
    if 'data-disk' in a:
     self.work=''
    else:
     self.capture=(self.depth,'work');self.parts=[]
+  elif self.track and 'track__item--duration' in classes:
+   self.capture=(self.depth,'duration');self.parts=[]
   elif self.track and ('track__item--name' in classes or 'track__info' in classes):
    self.capture=(self.depth,'title' if 'track__item--name' in classes else 'credits');self.parts=[]
  def handle_data(self,data):
@@ -34,12 +38,15 @@ class Tracks(HTMLParser):
   if self.capture and self.depth==self.capture[0]:
    value=' '.join(''.join(self.parts).split());key=self.capture[1]
    if key=='work':self.work=value
+   elif key=='duration':
+    duration=timing.seconds(value)
+    if duration:self.tracks[self.track]['duration_seconds']=duration
    elif key=='title':
     self.tracks[self.track][key]=value
     # Only incomplete numbered movement titles inherit the preceding work.
     # Full standalone titles in mixed recitals must remain independent.
     if self.work and re.match(r'^(?:[IVXLCDM]+\.|[0-9]+\.|No\.\s*[0-9]+[,.:])\s*',value):
-     self.tracks[self.track].update(work=self.work,movementName=value)
+     self.tracks[self.track].update(work=self.work,movementName=value,work_scope=self.work_scope)
    elif 'Composer' in value or 'Conductor' in value:
     self.tracks[self.track][key]=value
    self.capture=None
@@ -75,10 +82,13 @@ def file_tags(resource,root,resource_prefix="/minimserver/*/AudirvanaLibrary/"):
  rel=unquote(re.sub(r'\*([0-9a-fA-F]{2})',r'%\1',path[len(marker):]))
  root=Path(root).resolve();file=(root/rel).resolve()
  if not file.is_relative_to(root) or not file.is_file():return {}
- r=subprocess.run(['ffprobe','-v','quiet','-show_entries','format_tags','-of','json',str(file)],capture_output=True,text=True,timeout=8,check=True)
- tags={k.lower():v for k,v in json.loads(r.stdout).get('format',{}).get('tags',{}).items()}
+ r=subprocess.run(['ffprobe','-v','quiet','-show_entries','format=duration:format_tags','-of','json',str(file)],capture_output=True,text=True,timeout=8,check=True)
+ data=json.loads(r.stdout).get('format',{})
+ tags={k.lower():v for k,v in data.get('tags',{}).items()}
  aliases={'date':'date','year':'date','originaldate':'originalReleaseDate','originalyear':'originalReleaseDate','originalreleasedate':'originalReleaseDate','releasedate':'releaseDate','composer':'composer','conductor':'conductor','orchestra':'orchestra','ensemble':'orchestra','work':'work','composition':'work','movementname':'movementName','movementnumber':'movementNumber','title':'title','genre':'genre','soloist':'soloist','recordingdate':'recordingDate','recording_date':'recordingDate','recordeddate':'recordingDate','recordingyear':'recordingDate','recording_year':'recordingDate','compositiondate':'compositionDate','composition_date':'compositionDate','compositionyear':'compositionDate','composition_year':'compositionDate','composedate':'compositionDate'}
  result={dest:tags[src] for src,dest in aliases.items() if tags.get(src)}
+ duration=timing.seconds(data.get('duration'))
+ if duration:result['duration_seconds']=duration
  if tags.get('movement'):
   key='movementNumber' if re.fullmatch(r'\d+(?:/\d+)?',tags['movement']) else 'movementName'
   result.setdefault(key,tags['movement'])

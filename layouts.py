@@ -1,5 +1,6 @@
 """Static 4K artwork layouts for the listening-room display."""
 import math
+import timing
 import dates
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -31,7 +32,7 @@ def palette(cover):
     return tuple(round(18 + component * .14) for component in color)
 
 
-def current(cover_path, title, artist, output, recording_year='', date_line=''):
+def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None):
     cover = Image.open(cover_path).convert('RGB')
     canvas = Image.new('RGB', (3840, 2160), palette(cover))
     art = ImageOps.contain(cover, (1610, 1610), Image.Resampling.LANCZOS)
@@ -42,6 +43,8 @@ def current(cover_path, title, artist, output, recording_year='', date_line=''):
     text, f = fit_text(draw, artist, 3200, 48)
     draw.text((1920, 1940), text, font=f, fill=(191,189,185), anchor='mt')
     date_line = date_line or ('Recorded · '+recording_year if recording_year else '')
+    duration = timing.label(duration_seconds)
+    date_line = ' · '.join(filter(None, [date_line, 'Track length ' + duration if duration else '']))
     if date_line:
         draw.text((1920, 2030), date_line, font=font(38), fill=(170,168,163), anchor='mt')
     canvas.save(output, quality=95)
@@ -71,8 +74,9 @@ def collage(history, root, output):
 def classical(cover_path, details, output):
     cover=Image.open(cover_path).convert('RGB')
     canvas=Image.new('RGB',(3840,2160),palette(cover))
-    art=ImageOps.contain(cover,(1420,1420),Image.Resampling.LANCZOS)
-    canvas.paste(art,(150+(1420-art.width)//2,(2160-art.height)//2))
+    has_timing=bool(details.get('duration_seconds') or details.get('composition'))
+    art=ImageOps.contain(cover,(1320,1320) if has_timing else (1420,1420),Image.Resampling.LANCZOS)
+    canvas.paste(art,(150+(1420-art.width)//2,(1800-art.height)//2 if has_timing else (2160-art.height)//2))
     draw=ImageDraw.Draw(canvas);x=1770;y=300;width=1880
     def block(text,size,color,maxlines=3):
         nonlocal y
@@ -100,10 +104,11 @@ def classical(cover_path, details, output):
     if dates.display_line(details):
         y=min(y,2040)
         block(dates.display_line(details),42,(175,172,166),1)
+    track_timing(draw, details, 150, 1810, 1420)
     canvas.save(output,quality=95)
 
 
-def roon(cover_path, lines, output):
+def roon(cover_path, lines, output, duration_seconds=None):
     """Preserve Roon's display lines without inventing classical roles."""
     cover = Image.open(cover_path).convert('RGB')
     canvas = Image.new('RGB', (3840, 2160), palette(cover))
@@ -114,4 +119,38 @@ def roon(cover_path, lines, output):
                                   ((242,239,232), (191,189,185), (170,168,163))):
         text, f = fit_text(draw, text, 3300, size)
         draw.text((1920, y), text, font=f, fill=color, anchor='mt')
+    duration = timing.label(duration_seconds)
+    if duration:
+        draw.text((1920, 2050), 'Track length · '+duration, font=font(36), fill=(170,168,163), anchor='mt')
     canvas.save(output, quality=95)
+
+
+def track_timing(draw, details, x, y, width):
+    """Static duration-proportional bars; no elapsed-time animation."""
+    duration = timing.label(details.get('duration_seconds'))
+    group = details.get('composition') or {}
+    lengths = group.get('durations', [])
+    index = group.get('index', -1)
+    valid = (2 <= len(lengths) <= 16 and isinstance(index, int) and
+             0 <= index < len(lengths) and all(timing.seconds(v) for v in lengths))
+    heading = ('Movement %d of %d' % (index + 1, len(lengths))) if valid else ''
+    heading = ' · '.join(filter(None, [heading, duration]))
+    if not heading:
+        return
+    draw.text((x, y), heading, font=font(42), fill=(225,222,210), anchor='lt')
+    if not valid:
+        return
+    gap = 12
+    usable = width - gap * (len(lengths) - 1)
+    total = sum(lengths)
+    cursor = x
+    for i, length in enumerate(lengths):
+        end = cursor + usable * length / total
+        draw.rectangle((cursor, y+68, end, y+83), fill=(237,197,125) if i == index else (105,104,96))
+        cursor = end + gap
+    # Fixed legend cells keep short movements readable without distorting bars.
+    columns = 4
+    for i, length in enumerate(lengths):
+        text = f'{i+1}  {timing.label(length)}'
+        draw.text((x+(i%columns)*width/columns, y+110+(i//columns)*46), text,
+                  font=font(32), fill=(237,197,125) if i == index else (164,163,151), anchor='lt')

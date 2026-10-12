@@ -28,6 +28,7 @@ class ZoneState {
       album_key: imageKey ? 'roon:' + hash(JSON.stringify([this.coreId, imageKey, text[2]])) : '',
       track_key: 'roon:' + hash(JSON.stringify([this.coreId, imageKey, ...text])),
       lines: text, image_key: imageKey,
+      duration_seconds: Number.isFinite(n?.length) && n.length > 0 && n.length <= 86400 ? n.length : null,
       outputs: [...this.zones.values()].flatMap(z => (z.outputs || []).map(o => ({id: o.output_id, name: o.display_name, zone: z.display_name})))
     };
   }

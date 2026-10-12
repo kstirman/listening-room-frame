@@ -1,5 +1,6 @@
 """Read the local Roon extension snapshot. No playback-control commands."""
 import json
+import timing
 import re
 import time
 from pathlib import Path
@@ -30,6 +31,7 @@ class RoonSource:
                 return 'STOPPED', {}
             return 'PLAYING', {'source': 'roon', 'source_album_key': data['album_key'],
                 'object_id': data['track_key'], 'roon_cover': cover, 'roon_lines': lines,
+                'duration_seconds': timing.seconds(data.get('duration_seconds')),
                 'album': lines[2] or lines[0], 'artist': lines[1], 'title': lines[0]}
         except (OSError, ValueError, KeyError, TypeError):
             return 'STOPPED', {}

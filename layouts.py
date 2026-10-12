@@ -135,16 +135,17 @@ def track_timing(draw, details, x, y, width):
     group = details.get('composition') or {}
     lengths = group.get('durations', [])
     index = group.get('index', -1)
-    valid = (2 <= len(lengths) <= 16 and isinstance(index, int) and
+    valid = (2 <= len(lengths) <= 128 and isinstance(index, int) and
              0 <= index < len(lengths) and all(timing.seconds(v) for v in lengths))
-    heading = ('Movement %d of %d' % (index + 1, len(lengths))) if valid else ''
+    kind = 'Part' if group.get('label') == 'Part' else 'Movement'
+    heading = ('%s %d of %d' % (kind, index + 1, len(lengths))) if valid else ''
     heading = ' · '.join(filter(None, [heading, duration]))
     if not heading:
         return
     draw.text((x, y), heading, font=font(42), fill=(225,222,210), anchor='lt')
     if not valid:
         return
-    gap = 12
+    gap = min(12, width / (len(lengths)*5))
     usable = width - gap * (len(lengths) - 1)
     total = sum(lengths)
     cursor = x
@@ -153,6 +154,9 @@ def track_timing(draw, details, x, y, width):
         draw.rectangle((cursor, y+68, end, y+83), fill=(237,197,125) if i == index else (105,104,96))
         cursor = end + gap
     # Fixed legend cells keep short movements readable without distorting bars.
+    if len(lengths) > 16:
+        draw.text((x, y+115), 'Whole work · '+timing.label(sum(lengths)), font=font(32), fill=(164,163,151), anchor='lt')
+        return
     columns = 4
     for i, length in enumerate(lengths):
         text = f'{i+1}  {timing.label(length)}'

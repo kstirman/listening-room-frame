@@ -36,7 +36,10 @@ def number(track):
     if explicit.isdigit():
         return int(explicit)
     title = track.get('movementName') or track.get('title', '')
-    match = re.match(r'^(?:No\.\s*)?(\d+|[IVXLCDM]+)[.,:]\s+', title)
+    work = track.get('work', '')
+    if work and title.startswith(work + ':'):
+        title = title[len(work)+1:].strip()
+    match = re.match(r'^(?:No\.\s*)?(\d+|[IVXLCDM]+)[.,:]\s*', title)
     if not match:
         return None
     text = match[1]

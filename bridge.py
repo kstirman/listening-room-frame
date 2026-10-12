@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import layouts
 import timing
+import local_composition
 import library_metadata
 import classical
 import dates
@@ -120,6 +121,7 @@ class Bridge:
         self.running = True
         self.pages = {}
         self.detail_cache = {}
+        self.local_compositions = local_composition.Catalog()
         self.local_index = {}
         self.index_at = 0
         self.last_tv_check = 0
@@ -275,6 +277,8 @@ class Bridge:
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
         cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')))
+        if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
+            cache_key += (int(time.monotonic() // 60),)
         if cache_key in self.detail_cache:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
@@ -307,6 +311,11 @@ class Bridge:
                 enriched.update(library_metadata.lookup(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
             except Exception as error:
                 LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
+        if not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
+            try:
+                work_timing = self.local_compositions.context(metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+            except Exception as error:
+                LOG.warning('Local composition unavailable: %s', type(error).__name__)
         details = classical.normalize(enriched)
         track_title = enriched.get('title') or metadata.get('title')
         if track_title:

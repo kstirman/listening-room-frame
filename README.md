@@ -253,8 +253,15 @@ Incomplete, ambiguous or more-than-16-movement groups show duration alone.
 The strip describes the album's listed work sequence, not shuffle/queue order.
 
 Sonos and Roon currently provide duration only: their now-playing adapters do
-not supply a complete composition catalog. Local-file playback also shows
-only duration; this release does not scan sibling files to invent work groups.
+not supply a complete composition catalog. Local files with reviewed work and
+composer entries in `.listening-room-metadata/enriched.json` can show composition
+context too. Only matching files are probed (bounded and cached), then separated
+by album/recording artist and ordered by disc and track tags. Legacy album names
+ending in a disc number are supported. Missing lengths, duplicate track positions,
+numbering gaps or ambiguous recordings suppress the strip. Numbered movements use
+“Movement”; unnumbered opera tracks use “Part.” Long works retain proportional
+segments and a whole-work duration rather than an unreadably long duration legend.
+This is whole-work context, not act/scene inference; missing acts are not guessed.
 Roon users must update/restart the Node extension as well as the Python bridge
 for lengths to appear. Older extension snapshots remain compatible.
 

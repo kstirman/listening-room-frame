@@ -32,21 +32,25 @@ def palette(cover):
     return tuple(round(18 + component * .14) for component in color)
 
 
-def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None):
+def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None, track_title=''):
     cover = Image.open(cover_path).convert('RGB')
     canvas = Image.new('RGB', (3840, 2160), palette(cover))
     art = ImageOps.contain(cover, (1610, 1610), Image.Resampling.LANCZOS)
     canvas.paste(art, ((3840-art.width)//2, 135+(1610-art.height)//2))
     draw = ImageDraw.Draw(canvas)
-    text, f = fit_text(draw, title, 3200, 70)
+    text, f = fit_text(draw, track_title or title, 3200, 70)
     draw.text((1920, 1835), text, font=f, fill=(242,239,232), anchor='mt')
     text, f = fit_text(draw, artist, 3200, 48)
     draw.text((1920, 1940), text, font=f, fill=(191,189,185), anchor='mt')
+    if track_title and title and track_title != title:
+        text, f = fit_text(draw, title, 3200, 38)
+        draw.text((1920, 2010), text, font=f, fill=(170,168,163), anchor='mt')
     date_line = date_line or ('Recorded · '+recording_year if recording_year else '')
     duration = timing.label(duration_seconds)
     date_line = ' · '.join(filter(None, [date_line, 'Track length ' + duration if duration else '']))
     if date_line:
-        draw.text((1920, 2030), date_line, font=font(38), fill=(170,168,163), anchor='mt')
+        text, f = fit_text(draw, date_line, 3200, 36)
+        draw.text((1920, 2080 if track_title else 2030), text, font=f, fill=(170,168,163), anchor='mt')
     canvas.save(output, quality=95)
 
 

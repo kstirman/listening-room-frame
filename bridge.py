@@ -274,7 +274,7 @@ class Bridge:
             field = metadata['source'] + '_lines'
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
-        cache_key = (track, timing.seconds(metadata.get('duration_seconds')))
+        cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')))
         if cache_key in self.detail_cache:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
@@ -308,6 +308,9 @@ class Bridge:
             except Exception as error:
                 LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
         details = classical.normalize(enriched)
+        track_title = enriched.get('title') or metadata.get('title')
+        if track_title:
+            details = dict(details or {}, display_track=track_title)
         duration = timing.seconds(enriched.get('duration_seconds'))
         if duration: details = dict(details or {}, duration_seconds=duration)
         if work_timing: details = dict(details or {}, composition=work_timing)
@@ -341,7 +344,7 @@ class Bridge:
         elif entry:
             title = (details or {}).get('display_album') or title
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
-            layouts.current(self.root / entry['cover'], title, artist, image, date_line=dates.display_line(details), duration_seconds=(details or {}).get('duration_seconds'))
+            layouts.current(self.root / entry['cover'], title, artist, image, date_line=dates.display_line(details), duration_seconds=(details or {}).get('duration_seconds'), track_title=(details or {}).get('display_track', ''))
         return image, title
 
     def cover(self, metadata):

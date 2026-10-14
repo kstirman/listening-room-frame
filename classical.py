@@ -45,7 +45,7 @@ class Tracks(HTMLParser):
     self.tracks[self.track][key]=value
     # Only incomplete numbered movement titles inherit the preceding work.
     # Full standalone titles in mixed recitals must remain independent.
-    if self.work and re.match(r'^(?:[IVXLCDM]+\.|[0-9]+\.|No\.\s*[0-9]+[,.:])\s*',value):
+    if self.work and timing.number({'title':value}):
      self.tracks[self.track].update(work=self.work,movementName=value,work_scope=self.work_scope)
    elif 'Composer' in value or 'Conductor' in value:
     self.tracks[self.track][key]=value

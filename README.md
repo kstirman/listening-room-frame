@@ -254,6 +254,9 @@ and lengths for every listed movement. Adjacent classical tracks sharing an exac
 in explicitly numbered movements do not qualify. Repeated headings remain separate.
 Incomplete or ambiguous groups show duration alone. Numbered movement groups
 are limited to16; explicitly named part groups can contain up to128 tracks.
+Numbered pieces such as “No. 2 in C Major” inherit an explicit work heading
+and show “Part X of Y,” including sets of up to128 pieces. Opus groups and
+repeated headings stay separate; incomplete numbering suppresses the strip.
 The strip describes the album's listed work sequence, not shuffle/queue order.
 
 Sonos and Roon currently provide duration only: their now-playing adapters do

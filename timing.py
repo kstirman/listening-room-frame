@@ -39,7 +39,10 @@ def number(track):
     work = track.get('work', '')
     if work and title.startswith(work + ':'):
         title = title[len(work)+1:].strip()
-    match = re.match(r'^(?:No\.\s*)?(\d+|[IVXLCDM]+)[.,:]\s*', title)
+    numbered_piece = re.match(r'^No\.\s*(\d+)(?=[\s,.:]|$)', title)
+    if numbered_piece:
+        return int(numbered_piece[1])
+    match = re.match(r'^(\d+|[IVXLCDM]+)[.,:]\s*', title)
     if not match:
         return None
     text = match[1]
@@ -78,8 +81,14 @@ def composition(tracks, current):
     if not 2 <= len(group) <= 128 or not all(lengths):
         return None
     numbers = [number(item) for item in group]
-    if numbers == list(range(1, len(group) + 1)) and len(group) <= 16:
-        return {'index': pos - left, 'durations': lengths}
+    numbered_pieces = all(re.match(r'^No\.\s*\d+(?=[\s,.:]|$)',
+                                   item.get('movementName') or item.get('title', ''))
+                          for item in group)
+    if numbers == list(range(1, len(group) + 1)) and (len(group) <= 16 or numbered_pieces):
+        result = {'index': pos - left, 'durations': lengths}
+        if numbered_pieces:
+            result['label'] = 'Part'
+        return result
     if all(item.get('part_group') for item in group) and any(n is None for n in numbers):
         titles = [item.get('movementName') for item in group]
         # Duplicate sections can signal concatenated performances: omit rather

@@ -5,6 +5,13 @@ from pathlib import Path
 from urllib.parse import urlparse,unquote
 from html.parser import HTMLParser
 
+def tempo_section(title):
+ """Recognize bare tempo directions, never independent named compositions."""
+ starts = r'(?:largo|larghetto|lento|adagio|adagietto|andante|andantino|moderato|allegretto|allegro|vivace|vivacissimo|presto|prestissimo|grave|grandioso|recitativo)'
+ words = starts + r'|assai|molto|poco|più|piu|meno|non|troppo|sostenuto|energico|maestoso|cantabile|espressivo|con|brio|fuoco|moto|e|ma|dolce|tranquillo|agitato|appassionato|quasi|tempo|primo|giusto|rubato|sempre|ben|marcato|ritenuto'
+ return bool(re.fullmatch(starts + r'(?:[\s.,;:()–—-]+(?:' + words + r'))*[\s.,;:()–—-]*', title, re.I))
+
+
 class Tracks(HTMLParser):
  def __init__(self):
   super().__init__();self.tracks={};self.track=None;self.capture=None;self.parts=[]
@@ -43,10 +50,12 @@ class Tracks(HTMLParser):
     if duration:self.tracks[self.track]['duration_seconds']=duration
    elif key=='title':
     self.tracks[self.track][key]=value
-    # Only incomplete numbered movement titles inherit the preceding work.
-    # Full standalone titles in mixed recitals must remain independent.
-    if self.work and timing.number({'title':value}):
-     self.tracks[self.track].update(work=self.work,movementName=value,work_scope=self.work_scope)
+    # Explicit headings can describe numbered movements or bare tempo sections.
+    # An independent title ends inheritance, so later tracks cannot borrow it.
+    if self.work and (timing.number({'title':value}) or tempo_section(value)):
+     self.tracks[self.track].update(work=self.work,movementName=value,work_scope=self.work_scope,part_group=True)
+    else:
+     self.work=''
    elif 'Composer' in value or 'Conductor' in value:
     self.tracks[self.track][key]=value
    self.capture=None

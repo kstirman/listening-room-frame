@@ -257,6 +257,9 @@ are limited to16; explicitly named part groups can contain up to128 tracks.
 Numbered pieces such as “No. 2 in C Major” inherit an explicit work heading
 and show “Part X of Y,” including sets of up to128 pieces. Opus groups and
 repeated headings stay separate; incomplete numbering suppresses the strip.
+Bare tempo titles such as “Andante sostenuto” can also inherit an explicit
+work heading and form ordered parts. Independent named pieces end that
+inheritance; no work is inferred from a tempo title alone.
 The strip describes the album's listed work sequence, not shuffle/queue order.
 
 Sonos and Roon currently provide duration only: their now-playing adapters do

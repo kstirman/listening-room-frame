@@ -277,3 +277,11 @@ for lengths to appear. Older extension snapshots remain compatible.
 
 Metadata references: [Roon transport length](https://roonlabs.github.io/node-roon-api/other_node-roon-api-transport_lib.js.html),
 [SoCo current-track fields](https://soco.readthedocs.io/en/latest/api/soco.core.html#soco.core.SoCo.get_current_track_info).
+
+For a reviewed local recording whose disc names or movement numbering are
+inconsistent, per-track enrichment/overrides can supply `composition_group`
+(a recording-specific string), `composition_index` (one-based order across the
+whole work), and `composition_count` (total parts). Every part must be present,
+uniquely numbered from 1 through the total, and have a known duration and matching
+work/composer. These explicit groups display “Part X of Y”; do not reuse a group
+identifier for different performances. This does not change audio-file tags.

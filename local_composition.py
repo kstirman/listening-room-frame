@@ -48,6 +48,28 @@ def build(candidates, current):
     target = candidates.get(current)
     if not target:
         return None
+    group = target.get('composition_group')
+    if group:
+        # Reviewed recording identity and complete ordering override inconsistent
+        # rip tags, but never a missing/duplicate part or inconsistent total.
+        count = positive(target.get('composition_count'))
+        if not isinstance(group, str) or not count or not 2 <= count <= 128:
+            return None
+        rows = [(positive(v.get('composition_index')), key, v)
+                for key, v in candidates.items() if v.get('composition_group') == group]
+        if len(rows) != count or any(
+                positive(v.get('composition_count')) != count or
+                v.get('work') != target.get('work') or
+                v.get('composer') != target.get('composer') or
+                not timing.seconds(v.get('duration_seconds')) or not index
+                for index, _, v in rows):
+            return None
+        rows.sort(key=lambda r: r[0])
+        if [r[0] for r in rows] != list(range(1, count + 1)):
+            return None
+        return {'index': next(i for i, r in enumerate(rows) if r[1] == current),
+                'durations': [timing.seconds(r[2]['duration_seconds']) for r in rows],
+                'label': 'Part'}
     base, _ = album_identity(target)
     artist = target.get('albumartist') or target.get('artist')
     if not base or not artist:
@@ -121,7 +143,7 @@ class Catalog:
             if time.monotonic() >= deadline:
                 return None
             tags = probe(path)
-            tags.update({k:v for k,v in item.items() if k in ('work','movementName','movementNumber','composer')})
+            tags.update({k:v for k,v in item.items() if k in ('work','movementName','movementNumber','composer','composition_group','composition_index','composition_count')})
             rows[str(path)] = tags
         if len(self.cache) >= 8:
             self.cache.pop(next(iter(self.cache)))

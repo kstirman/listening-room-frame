@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import layouts
 import timing
+import local_match
 import local_composition
 import library_metadata
 import auto_catalog
@@ -124,6 +125,7 @@ class Bridge:
         self.pages = {}
         self.detail_cache = {}
         self.local_compositions = local_composition.Catalog()
+        self.local_matches = local_match.Index()
         self.auto_catalog = auto_catalog.Resolver()
         self.local_index = {}
         self.index_at = 0
@@ -292,6 +294,17 @@ class Bridge:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
         work_timing = None
+        local_status = None
+        local_resource = None
+        if not metadata.get('album_id') and self.config.get('library_root') and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/'):
+            try:
+                match, local_status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                if match:
+                    local_resource, fields = match
+                    enriched.update(fields)
+            except Exception as error:
+                local_status = 'local_unavailable'
+                LOG.warning('Local recording match unavailable: %s', type(error).__name__)
         if metadata.get('album_id'):
             parser = classical.Tracks()
             page = self.album_page(metadata['album_id'])
@@ -318,10 +331,11 @@ class Bridge:
                 LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
         if not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
             try:
-                work_timing = self.local_compositions.context(metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                work_timing = self.local_compositions.context(local_resource or metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
             except Exception as error:
                 LOG.warning('Local composition unavailable: %s', type(error).__name__)
-        if work_timing is None and not metadata.get('album_id'):
+        local_priority = local_status in ('local_matched', 'local_ambiguous', 'local_unavailable')
+        if work_timing is None and not metadata.get('album_id') and not local_priority:
             try:
                 match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page)
                 if match:
@@ -330,7 +344,9 @@ class Bridge:
             except Exception as error:
                 LOG.warning('Reviewed catalog unavailable: %s', type(error).__name__)
         catalog_status = None
-        if automatic and work_timing is None:
+        if local_priority:
+            catalog_status = local_status
+        elif automatic and work_timing is None:
             match, catalog_status = self.auto_catalog.lookup(metadata)
             if match:
                 row, work_timing = match

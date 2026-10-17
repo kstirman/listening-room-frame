@@ -317,3 +317,22 @@ Section” still displays the work and known part without inventing a total or s
 The listening console reports searching, matched, ambiguous, incomplete or
 unavailable context. A verified `reviewed_catalog_albums` entry remains the way
 to resolve a specific edition when automatic matching is ambiguous.
+
+### Reuse reviewed local metadata with Audirvana
+
+Audirvana proxy playback first checks the existing local
+`.listening-room-metadata/inventory.json`, `enriched.json`, and
+`track-overrides.json`. Original or reviewed title, album and artist must match;
+the candidate file must still exist inside `library_root`, its current identity
+must match, and its measured duration must be within one second. Only a unique
+file is accepted. At most eight candidates are probed, with cached results and
+metadata-file change detection; there is no full-library audio scan.
+
+The matched file uses the same reviewed composer, work, movement, performers,
+dates and composition ordering as MinimServer/JPLAY. Local corrections take
+priority even if the work sequence is incomplete. Ambiguous copies or unreadable
+candidates withhold online replacement. A recording absent from the local index
+can still use automatic online discovery. Missing inventory entries need the
+normal metadata inventory workflow; the bridge does not edit tags or rebuild the
+library. The listening console distinguishes reviewed local matches from ambiguous
+local copies. Disabling online discovery does not disable local metadata reuse.

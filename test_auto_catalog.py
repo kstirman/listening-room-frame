@@ -1,0 +1,78 @@
+import json
+import tempfile
+import time
+import unittest
+from unittest.mock import Mock
+from bridge import Bridge
+from classical import normalize
+from auto_catalog import Resolver, candidates, album_rows
+
+
+def ld(data):
+    return '<script type="application/ld+json">'+json.dumps(data)+'</script>'
+
+
+def search(ids=('abc',)):
+    return ld({'@type':'ItemList','itemListElement':[{'item':{'@type':'MusicAlbum','name':'Example Cycle','url':'https://www.qobuz.com/us-en/album/example/'+i}} for i in ids]})
+
+
+def page(artist='Example Choir', missing=False):
+    return ld({'@type':'Product','name':'Example Cycle','brand':{'name':artist}})+'<div id="playerTracks">'+''.join(
+        f'<div data-track="{i}" data-gtm=\'{{"product":{{"category":"classique"}}}}\'><span class="track__item--name">Cycle: No. {i}, Part</span><p class="track__info">Example Composer, Composer</p><span class="track__item--duration">{length}</span></div>'
+        for i,length in [(1,'00:02:00'),(2,'' if missing else '00:03:00')])+'</div>'
+
+
+META={'album':'Example Cycle','artist':'Example Choir','title':'Cycle: No. 2, Part','genre':'Classical','duration_seconds':180,'resource':'http://example.test/audirvana/audio_f_13.wav'}
+
+
+class AutomaticCatalogTests(unittest.TestCase):
+    def wait(self, resolver):
+        deadline=time.monotonic()+2
+        while resolver.busy and time.monotonic()<deadline:
+            time.sleep(.005)
+        self.assertFalse(resolver.busy)
+
+    def test_background_match_reuses_full_album_for_next_track(self):
+        get=Mock(side_effect=[search(),page()]);r=Resolver(get)
+        self.assertEqual(r.lookup(META)[1],'searching');self.wait(r)
+        match,status=r.lookup(META)
+        self.assertEqual(status,'matched');self.assertEqual(match[1]['index'],1)
+        match,status=r.lookup(dict(META,title='Cycle: No. 1, Part',duration_seconds=120))
+        self.assertEqual(match[1]['index'],0);self.assertEqual(get.call_count,2)
+
+    def test_artist_and_editions_checked(self):
+        for pages,status in [([page('Other')],'unmatched'),([page(),page()],'ambiguous')]:
+            r=Resolver(Mock(side_effect=[search(('a','b') if len(pages)==2 else ('a',))]+pages))
+            r.lookup(META);self.wait(r);self.assertEqual(r.lookup(META)[1],status)
+
+    def test_wrong_duration_and_missing_parts(self):
+        for p,meta,status in [(page(),dict(META,duration_seconds=200),'track_mismatch'),
+                              (page(missing=True),dict(META,title='Cycle: No. 1, Part',duration_seconds=120),'incomplete')]:
+            r=Resolver(Mock(side_effect=[search(),p]));r.lookup(meta);self.wait(r)
+            self.assertEqual(r.lookup(meta)[1],status)
+
+    def test_failure_negative_cache_and_candidate_limit(self):
+        for get,status in [(Mock(side_effect=RuntimeError()),'unavailable'),
+                           (Mock(return_value=search(('a','b','c','d','e'))),'ambiguous')]:
+            r=Resolver(get);r.lookup(META);self.wait(r)
+            self.assertEqual(r.lookup(META)[1],status);r.lookup(META)
+            self.assertEqual(get.call_count,1)
+        self.assertEqual(candidates(search().replace('www.qobuz.com','evil.test'),'Example Cycle'),[])
+        self.assertIsNone(album_rows(page(),'Different','Example Choir'))
+
+    def test_fallback_known_part_without_invented_total(self):
+        d=normalize(META)
+        self.assertEqual(d['work'],'Cycle');self.assertEqual(d['movement'],'No. 2, Part')
+        self.assertNotIn('composition',d)
+        self.assertIsNone(normalize(dict(META,genre='Pop')))
+
+    def test_bridge_opt_out_and_source_independent_opt_in(self):
+        with tempfile.TemporaryDirectory() as root:
+            b=Bridge({'auto_catalog':False},root);b.auto_catalog.lookup=Mock()
+            self.assertEqual(b.details(META)['movement'],'No. 2, Part')
+            b.auto_catalog.lookup.assert_not_called()
+        with tempfile.TemporaryDirectory() as root:
+            b=Bridge({'auto_catalog_other_upnp':True},root)
+            b.auto_catalog.lookup=Mock(return_value=(None,'ambiguous'))
+            d=b.details(dict(META,resource='http://example.test/proxy/1'))
+            self.assertEqual(d['catalog_status'],'ambiguous')

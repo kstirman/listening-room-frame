@@ -16,6 +16,7 @@ import layouts
 import timing
 import local_composition
 import library_metadata
+import auto_catalog
 import reviewed_catalog
 import classical
 import dates
@@ -123,6 +124,7 @@ class Bridge:
         self.pages = {}
         self.detail_cache = {}
         self.local_compositions = local_composition.Catalog()
+        self.auto_catalog = auto_catalog.Resolver()
         self.local_index = {}
         self.index_at = 0
         self.last_tv_check = 0
@@ -277,9 +279,15 @@ class Bridge:
             field = metadata['source'] + '_lines'
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
+        automatic = (not metadata.get('album_id') and bool(classical.normalize(metadata)) and
+                     self.config.get('auto_catalog', True) and
+                     (urlparse(metadata.get('resource', '')).path.startswith('/audirvana/') or
+                      self.config.get('auto_catalog_other_upnp', False)))
         cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')), metadata.get('album', ''), metadata.get('artist', ''))
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
+        if automatic:
+            cache_key += (int(time.monotonic() // 10),)
         if cache_key in self.detail_cache:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
@@ -321,7 +329,17 @@ class Bridge:
                     enriched.update(row)
             except Exception as error:
                 LOG.warning('Reviewed catalog unavailable: %s', type(error).__name__)
+        catalog_status = None
+        if automatic and work_timing is None:
+            match, catalog_status = self.auto_catalog.lookup(metadata)
+            if match:
+                row, work_timing = match
+                enriched.update(row)
+        elif automatic:
+            catalog_status = 'matched'
         details = classical.normalize(enriched)
+        if catalog_status:
+            details = dict(details or {}, catalog_status=catalog_status)
         track_title = enriched.get('title') or metadata.get('title')
         if track_title:
             details = dict(details or {}, display_track=track_title)

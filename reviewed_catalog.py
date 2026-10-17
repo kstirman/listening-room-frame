@@ -21,6 +21,16 @@ def lookup(metadata, mappings, fetch):
     parser = classical.Tracks()
     parser.feed(fetch(album_id))
     rows = classical.catalog(parser.tracks)
+    match = select(metadata, rows)
+    return match if match and match[1] else None
+
+
+def select(metadata, rows):
+    """Shared exact track/duration matching for reviewed and discovered albums."""
+    title = metadata.get('title')
+    duration = timing.seconds(metadata.get('duration_seconds'))
+    if not title or not duration:
+        return None
     selected = [key for key, row in rows.items() if row.get('title') == title and
                 timing.seconds(row.get('duration_seconds')) and
                 abs(timing.seconds(row['duration_seconds']) - duration) <= 1]
@@ -28,4 +38,4 @@ def lookup(metadata, mappings, fetch):
         return None
     key = selected[0]
     context = timing.composition(rows, key)
-    return (rows[key], context) if context else None
+    return rows[key], context

@@ -31,6 +31,10 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(data['revision'],hashlib.sha256(image.read_bytes()).hexdigest())
         self.assertEqual(data['status'],'prepared');self.assertIsNone(data['confirmed_at'])
 
+    def test_catalog_diagnostic_is_published(self):
+        self.b.card(self.metadata, {'catalog_status':'ambiguous'})
+        self.assertEqual(self.manifest()['catalog_status'],'ambiguous')
+
     def test_failed_selection_never_claims_confirmation(self):
         self.b.card(self.metadata,self.b.details(self.metadata))
         tv=Mock();tv.get_current.return_value={'content_id':'WRONG'}

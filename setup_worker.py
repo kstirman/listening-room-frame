@@ -76,7 +76,19 @@ def main():
                 status, metadata = bridge.playback()
                 if status != 'PLAYING' or not bridge.album_key(metadata):
                     return {'message':'Play a track with artwork in the selected room, then try again.', 'prepared':False}
-                bridge.card(metadata,bridge.details(metadata))
+                details = bridge.details(metadata)
+                bridge.card(metadata,details)
+                # A one-shot preview must stay alive long enough for discovery.
+                if isinstance(details, dict) and details.get('catalog_status') == 'searching':
+                    deadline = time.monotonic() + 30
+                    while bridge.auto_catalog.busy and time.monotonic() < deadline and not stopping[0] and os.getppid() == parent:
+                        time.sleep(.2)
+                    if not stopping[0] and os.getppid() == parent:
+                        current_status, current = bridge.playback()
+                        fields = ('album', 'artist', 'title', 'duration_seconds')
+                        if current_status == 'PLAYING' and all(current.get(k) == metadata.get(k) for k in fields):
+                            bridge.detail_cache.clear()
+                            bridge.card(metadata, bridge.details(metadata))
                 write(root/'playback.json', {'transport':status,'title':metadata.get('title',''),
                                            'artist':metadata.get('artist',''),'album':metadata.get('album',''),
                                            'updated_at':time.time()})

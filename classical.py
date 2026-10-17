@@ -79,6 +79,12 @@ def normalize(metadata):
  genre=str(m.get('genre','')).strip().casefold()
  is_classical=bool(m.get('classical') is True or m.get('work') or 'classical' in genre or genre in {'classique','opera','oper','orchestral','symphony','chamber music','choral','medieval','vocal works'})
  if not is_classical:return None
+ # Preserve a known part even when the source provides no complete album catalog.
+ if not m.get('movementName'):
+  named=re.match(r'^(.*):\s*(No\.\s*\d+(?:[\s,.:].*)?)$',title)
+  if named:
+   m['work']=named[1];m['movementName']=named[2]
+
  work=m.get('work') or ('' if re.fullmatch(r'(?:track[ _-]*\d+|unknown(?: title)?|untitled)',title.strip(),re.I) else title)
  movement=m.get('movementName') or m.get('movement','')
  number=m.get('movementNumber','')

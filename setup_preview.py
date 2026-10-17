@@ -32,10 +32,12 @@ class PreviewBridge(Bridge):
         manager = self.root.parent
         atomic(manager/'preview.jpg',content)
         data = {'revision':revision,'prepared_at':time.time(),'confirmed_at':time.time() if confirmed else None,
-                'kind':kind,'accent':palette,'status':'confirmed' if confirmed else 'prepared'}
+                'kind':kind,'accent':palette,'status':'confirmed' if confirmed else 'prepared',
+                'catalog_status':getattr(self, 'catalog_status', None)}
         atomic(manager/'presentation.json',json.dumps(data).encode())
 
     def card(self, metadata, details):
+        self.catalog_status = (details or {}).get('catalog_status')
         image, title = super().card(metadata,details)
         self.publish(image)
         return image,title

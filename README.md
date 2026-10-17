@@ -296,3 +296,24 @@ an ordered work group with complete durations. Missing or ambiguous matches
 leave the normal display intact. This is a reviewed mapping, not automatic
 search; keep personal mappings in private configuration. Audio playback and
 artwork-source selection are unchanged.
+
+### Automatic Audirvana recording matches
+
+Classical Audirvana UPnP proxy streams now trigger a background search of Qobuz's
+public album catalog. Only the album title is sent in the search query; album and
+artist must match (ignoring case/spacing), then one unique track title and duration
+within one second must identify an edition. Multiple matching editions, incomplete
+work sequences and lookup failures retain the fallback display. Search is limited
+to four exact-title candidates, one job at a time, with bounded network timeouts.
+Successful album catalogs are cached for 30 minutes across tracks; unsuccessful
+lookups retry after five minutes. Pending results are checked every ten seconds.
+No credentials or audio are sent, and no playback controls are used.
+
+Set `auto_catalog` to false to disable online discovery. Other UPnP sources can
+opt in with `auto_catalog_other_upnp: true`; direct catalog IDs, reviewed mappings,
+and local composition context take priority. Matching uses the same track and
+work grouping as those existing paths. A classical title such as “Cycle: No. 5,
+Section” still displays the work and known part without inventing a total or strip.
+The listening console reports searching, matched, ambiguous, incomplete or
+unavailable context. A verified `reviewed_catalog_albums` entry remains the way
+to resolve a specific edition when automatic matching is ambiguous.

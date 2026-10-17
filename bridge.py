@@ -380,9 +380,17 @@ class Bridge:
             url = overrides.get(legacy, overrides.get(
                 self.album_key(metadata), metadata.get('albumArtURI', '')))
             parsed = urlparse(url)
-            # Known home music hosts only; never use the signed audio resource URL.
-            if parsed.scheme not in ('http', 'https') or parsed.hostname not in self.config['local_art_hosts']:
-                raise ValueError('No supported local cover URL')
+            # Audirvana supplies Qobuz cover metadata without Qobuz item IDs.
+            # Accept only the cover CDN path, never the audio resource URL.
+            qobuz_cover = (parsed.scheme == 'https'
+                           and parsed.hostname == 'static.qobuz.com'
+                           and parsed.path.startswith('/images/covers/')
+                           and parsed.username is None and parsed.password is None
+                           and parsed.port in (None, 443))
+            local_cover = (parsed.scheme in ('http', 'https')
+                           and parsed.hostname in self.config['local_art_hosts'])
+            if not (qobuz_cover or local_cover):
+                raise ValueError('No supported cover URL')
         if metadata.get('source') not in ('roon', 'sonos'):
             r = self.session.get(url, timeout=15)
             r.raise_for_status()

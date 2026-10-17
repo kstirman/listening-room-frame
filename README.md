@@ -336,3 +336,9 @@ can still use automatic online discovery. Missing inventory entries need the
 normal metadata inventory workflow; the bridge does not edit tags or rebuild the
 library. The listening console distinguishes reviewed local matches from ambiguous
 local copies. Disabling online discovery does not disable local metadata reuse.
+
+### Shared local artwork and portable imports
+
+Audirvana proxy tracks that uniquely match a reviewed local recording now reuse its reviewed Frame artwork mapping as well as metadata. Original and reviewed album titles, MinimServer escaping and multidisc keys are supported. Ambiguous recordings or conflicting cover mappings retain the controller's artwork. Artwork hosts remain restricted by the existing allowlist. Existing cached Audirvana covers refresh when their selected artwork URL changes.
+
+For new uploads, [portable intake](intake/README.md) prepares reviewed tags and embedded covers in copies, preserves originals, and verifies unchanged decoded audio. This makes approved information available to players without requiring their access to the Frame correction database. Player-specific field visibility and library refresh still require verification; existing library files are not rewritten.

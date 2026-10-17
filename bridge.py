@@ -380,7 +380,10 @@ class Bridge:
     def card(self, metadata, details):
         album = self.album_key(metadata)
         entry = next((e for e in self.state['history'] if e['key'] == album), None)
-        if album != self.state.get('album') or entry is None:
+        refreshed_art = (entry is not None and self.config.get('library_root')
+                         and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/')
+                         and entry.get('artwork_url') != self.local_art_url(metadata))
+        if album != self.state.get('album') or entry is None or refreshed_art:
             image, title = self.cover(metadata)
             entry = next((e for e in self.state['history'] if e['key'] == album), None)
         else:
@@ -394,6 +397,33 @@ class Bridge:
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
             layouts.current(self.root / entry['cover'], title, artist, image, date_line=dates.display_line(details), duration_seconds=(details or {}).get('duration_seconds'), track_title=(details or {}).get('display_track', ''))
         return image, title
+
+    def local_art_url(self, metadata):
+        """Reuse reviewed artwork only after a unique local recording match."""
+        overrides = self.config.get('local_art_overrides', {})
+        resources = [(metadata.get('resource', ''), metadata.get('album', ''))]
+        if self.config.get('library_root') and urlparse(resources[0][0]).path.startswith('/audirvana/'):
+            try:
+                match, status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                if match:
+                    resource, fields = match
+                    resources = [(resource, album) for album in
+                                 {metadata.get('album', ''), fields.get('album', '')} if album]
+            except Exception as error:
+                LOG.warning('Local artwork match unavailable: %s', type(error).__name__)
+        choices = set()
+        for resource, album in resources:
+            directory = urlparse(resource).path.rsplit('/', 1)[0]
+            # Synthesized local resources use percent escapes; MinimServer may use *XX.
+            for path in {directory, re.sub(r'%([0-9A-Fa-f]{2})', r'*\1', directory)}:
+                key = 'local:' + path + ':' + album
+                for candidate in (key, self.canonical_album_key(key)):
+                    if overrides.get(candidate): choices.add(overrides[candidate])
+        if len(choices) == 1:
+            return choices.pop()
+        if not choices:
+            return overrides.get(self.album_key(metadata), metadata.get('albumArtURI', ''))
+        return metadata.get('albumArtURI', '')
 
     def cover(self, metadata):
         album_id = metadata.get('album_id')
@@ -417,11 +447,7 @@ class Bridge:
             if urlparse(url).hostname != 'static.qobuz.com':
                 raise ValueError('Qobuz cover URL missing or unexpected')
         else:
-            overrides = self.config.get('local_art_overrides', {})
-            directory = urlparse(metadata.get('resource', '')).path.rsplit('/', 1)[0]
-            legacy = 'local:' + directory + ':' + metadata.get('album', '')
-            url = overrides.get(legacy, overrides.get(
-                self.album_key(metadata), metadata.get('albumArtURI', '')))
+            url = self.local_art_url(metadata)
             parsed = urlparse(url)
             # Audirvana supplies Qobuz cover metadata without Qobuz item IDs.
             # Accept only the cover CDN path, never the audio resource URL.
@@ -445,7 +471,8 @@ class Bridge:
         filename = 'covers/' + hashlib.sha256(key.encode()).hexdigest() + '.jpg'
         cover.save(self.root / filename, quality=95)
         history = [entry for entry in self.state['history'] if entry['key'] != key]
-        history.insert(0, {'key': key, 'cover': filename, 'title': title, 'artist': artist})
+        history.insert(0, {'key': key, 'cover': filename, 'title': title, 'artist': artist,
+                           'artwork_url': url if metadata.get('source') not in ('roon', 'sonos') else None})
         removed = history[self.config.get('history_limit', 28):]
         self.state['history'] = history[:self.config.get('history_limit', 28)]
         self.state['artist'] = artist

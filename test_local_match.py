@@ -74,3 +74,42 @@ class LocalMatchTests(unittest.TestCase):
         with patch('local_match.local_composition.probe',side_effect=RuntimeError()):
             self.assertEqual(Index().lookup(META,self.root)[1],'local_unavailable')
         self.assertEqual(Index().lookup(dict(META,artist=''),self.root)[1],'local_insufficient')
+
+    def test_reviewed_art_for_proxy_and_ambiguous_fallback(self):
+        with tempfile.TemporaryDirectory() as state:
+            b=Bridge({'library_root':str(self.root)},state)
+            meta=dict(META,albumArtURI='http://example.test/fallback.jpg')
+            b.config['local_art_overrides']={'local:/minimserver/*/AudirvanaLibrary:Original album':'http://example.test/reviewed.jpg'}
+            with patch('local_match.local_composition.probe',return_value=TAGS):
+                self.assertEqual(b.local_art_url(meta),'http://example.test/reviewed.jpg')
+                self.write(['one.flac','two.flac'])
+                self.assertEqual(b.local_art_url(meta),meta['albumArtURI'])
+
+    def test_minim_escape_and_conflicting_art(self):
+        with tempfile.TemporaryDirectory() as state:
+            b=Bridge({},state)
+            meta=dict(META,resource='http://local.invalid/music/An%20Album/CD1/one.flac',albumArtURI='http://example.test/fallback.jpg')
+            b.config['local_art_overrides']={'local:/music/An*20Album:Original album':'http://example.test/reviewed.jpg'}
+            self.assertEqual(b.local_art_url(meta),'http://example.test/reviewed.jpg')
+            b.config['local_art_overrides']['local:/music/An%20Album/CD1:Original album']='http://example.test/conflict.jpg'
+            self.assertEqual(b.local_art_url(meta),meta['albumArtURI'])
+
+    def test_cached_proxy_cover_refresh_and_host_validation(self):
+        import io
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as state:
+            b=Bridge({'library_root':str(self.root),'local_art_hosts':['example.test']},state)
+            meta=dict(META,albumArtURI='http://example.test/fallback.jpg')
+            key=b.album_key(meta)
+            b.state.update(album=key,history=[{'key':key,'cover':'covers/old.jpg','title':'Old'}])
+            b.config['local_art_overrides']={'local:/minimserver/*/AudirvanaLibrary:Original album':'http://example.test/reviewed.jpg'}
+            data=io.BytesIO();Image.new('RGB',(32,32),'red').save(data,format='JPEG')
+            b.session=Mock();b.session.get.return_value.content=data.getvalue()
+            with patch('local_match.local_composition.probe',return_value=TAGS):
+                b.card(meta,None)
+                b.session.get.assert_called_once_with('http://example.test/reviewed.jpg',timeout=15)
+                b.card(meta,None)
+                self.assertEqual(b.session.get.call_count,1)
+                b.config['local_art_overrides']['local:/minimserver/*/AudirvanaLibrary:Original album']='http://unapproved.test/art.jpg'
+                with self.assertRaises(ValueError):b.cover(meta)
+                self.assertEqual(b.session.get.call_count,1)

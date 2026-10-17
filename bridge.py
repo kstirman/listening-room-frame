@@ -16,6 +16,7 @@ import layouts
 import timing
 import local_composition
 import library_metadata
+import reviewed_catalog
 import classical
 import dates
 from roon_source import RoonSource
@@ -276,7 +277,7 @@ class Bridge:
             field = metadata['source'] + '_lines'
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
-        cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')))
+        cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')), metadata.get('album', ''), metadata.get('artist', ''))
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
         if cache_key in self.detail_cache:
@@ -312,6 +313,14 @@ class Bridge:
                 work_timing = self.local_compositions.context(metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
             except Exception as error:
                 LOG.warning('Local composition unavailable: %s', type(error).__name__)
+        if work_timing is None and not metadata.get('album_id'):
+            try:
+                match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page)
+                if match:
+                    row, work_timing = match
+                    enriched.update(row)
+            except Exception as error:
+                LOG.warning('Reviewed catalog unavailable: %s', type(error).__name__)
         details = classical.normalize(enriched)
         track_title = enriched.get('title') or metadata.get('title')
         if track_title:

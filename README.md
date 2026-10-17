@@ -285,3 +285,14 @@ whole work), and `composition_count` (total parts). Every part must be present,
 uniquely numbered from 1 through the total, and have a known duration and matching
 work/composer. These explicit groups display “Part X of Y”; do not reuse a group
 identifier for different performances. This does not change audio-file tags.
+
+### Sources without catalog IDs
+
+Some UPnP sources, including Audirvana proxy streams, omit Qobuz catalog IDs.
+An optional `reviewed_catalog_albums` configuration list can link a verified
+recording using exact `album`, `artist`, and `qobuz_album_id` values. Enrichment
+requires one unique matching track title and duration within one second, plus
+an ordered work group with complete durations. Missing or ambiguous matches
+leave the normal display intact. This is a reviewed mapping, not automatic
+search; keep personal mappings in private configuration. Audio playback and
+artwork-source selection are unchanged.

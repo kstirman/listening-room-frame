@@ -21,7 +21,11 @@ def identities(track, album, fields, tags=None):
     albums = values(tags.get('album')) + [fields.get('album')]
     if not any(albums):
         albums = [album.get('album')]
-    artists = values(tags.get('artist')) + values(tags.get('albumartist')) + [fields.get('artist'), fields.get('albumArtist')]
+    artists = values(tags.get('artist')) + values(tags.get('albumartist')) + values(tags.get('album_artist')) + [fields.get('artist'), fields.get('albumArtist')]
+    # Controllers may expose a conductor/ensemble instead of the combined artist.
+    # Accept exact reviewed performer credits, never split names or use composer.
+    for role in ('conductor', 'orchestra', 'soloists'):
+        artists += values(fields.get(role))
     if not any(artists):
         artists = [album.get('artist')]
     return [{key(v) for v in group if v} for group in (title, albums, artists)]

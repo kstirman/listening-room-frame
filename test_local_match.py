@@ -113,3 +113,22 @@ class LocalMatchTests(unittest.TestCase):
                 b.config['local_art_overrides']['local:/minimserver/*/AudirvanaLibrary:Original album']='http://unapproved.test/art.jpg'
                 with self.assertRaises(ValueError):b.cover(meta)
                 self.assertEqual(b.session.get.call_count,1)
+
+    def test_reviewed_performer_identity_without_fuzzy_matching(self):
+        with patch('local_match.local_composition.probe',return_value=TAGS):
+            index=Index()
+            self.assertEqual(index.lookup(dict(META,artist='Reviewed conductor'),self.root)[1],'local_matched')
+            for changes in ({'artist':'conductor'}, {'artist':'Reviewed composer'},
+                            {'artist':'Reviewed conductor','album':'Another album'},
+                            {'artist':'Reviewed conductor','duration_seconds':130}):
+                self.assertEqual(index.lookup(dict(META,**changes),self.root)[1],'local_unmatched')
+            self.write(['one.flac','two.flac'])
+            self.assertEqual(index.lookup(dict(META,artist='Reviewed conductor'),self.root)[1],'local_ambiguous')
+
+    def test_ffprobe_album_artist_alias(self):
+        self.write(['one.flac'])
+        p=self.db/'inventory.json'; data=json.loads(p.read_text())
+        data['albums'][0]['tracks'][0]['tags']['albumartist']=['Album performer']
+        p.write_text(json.dumps(data))
+        with patch('local_match.local_composition.probe',return_value=dict(TAGS,album_artist='Album performer')):
+            self.assertEqual(Index().lookup(dict(META,artist='Album performer'),self.root)[1],'local_matched')

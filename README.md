@@ -365,7 +365,7 @@ Keep the playlist and images in a private directory outside this repository. Con
 }
 ```
 
-The manifest contains `photos: [{"file": "images/example.jpg", "date": "2001-01-01", "date_source": "EXIF DateTimeOriginal", "location": "Example city", "location_source": "Reviewed photo information"}]`. Paths must remain inside its directory. Dates and places without provenance are omitted. Images remain uncropped, honor EXIF orientation, and are rendered at 3840×2160. Unknown dates/places are never guessed. No automatic historical chart captions are generated.
+The manifest contains `photos: [{"file": "images/example.jpg", "date": "2001-01-01", "date_source": "EXIF DateTimeOriginal", "location": "Example city", "location_source": "Reviewed photo information"}]`. Paths must remain inside its directory. Dates and places without provenance are omitted. Images honor EXIF orientation and render at 3840×2160; landscape images fill the screen with a centered crop, while portraits retain their full composition over a blurred background. Unknown dates/places are never guessed. No automatic historical chart captions are generated.
 
 For a Google Photos shared album, save the shared link in a private text file, then explicitly import it:
 
@@ -376,3 +376,24 @@ python import_photos.py --album-url-file /private/album-url.txt --destination /p
 This is a bounded, unofficial shared-page import, **not an account sync**. It imports up to the first 300 media records, skips videos, and reports `more_available` when the album has later pages. It does not claim complete album coverage or automatically import future additions. Repeat the explicit import to refresh that initial page; reviewed location captions and existing cached photos are preserved. A failed/empty import retains the previous playlist. Shared-page changes can break the importer; a manually prepared manifest remains usable offline. Google Photos API shared-album access was removed in the [2025 API changes](https://developers.google.com/photos/support/updates).
 
 Catalog matching also accepts exact per-track MainArtist credits when the album's lead artist differs. Search candidates with omitted edition subtitles still require an exact full album heading before use. Classical opera acts stay under the whole work; a single missing catalog number is bridged only when both adjacent tracks agree on work, composer, scope, and act. Duplicate sections, conflicting works, incomplete timing, and ambiguous recordings continue to fail closed.
+
+
+### Photo presentation and variety
+
+Idle photos now rotate across capture dates, with equal weight per date so a large
+burst does not dominate. The last 100 photo selections and seven dates persist in
+private state. When available, one third of selections favor the same day or a
+14-day seasonal window in earlier years; recent-history avoidance takes priority.
+Only the imported cache is eligible; the shared-page importer still reports partial
+coverage and does not fetch subsequent album pages.
+
+Landscape photos fill the 4K screen using a centered crop. Portraits retain their
+full composition over a blurred version of the same photo. Large white date/place
+lines appear at bottom right with local shading. Only sourced captions display.
+
+The importer's optional `--original-metadata` flag reads EXIF capture dates and GPS
+before resizing; install `pillow-heif` in the import environment for HEIC originals.
+Unsupported originals leave display import working. GPS remains private metadata;
+this importer performs no network geocoding and does not invent place names.
+EXIF capture dates are retained separately from the shared album's displayed date,
+which can reflect user corrections. Never publish photo manifests or metadata.

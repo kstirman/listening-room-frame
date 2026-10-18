@@ -40,3 +40,24 @@ class ImportTests(unittest.TestCase):
     def test_unapproved_network_host_rejected(self):
         for url in ['http://lh3.googleusercontent.com/a','https://example.invalid/a','https://user:password@lh3.googleusercontent.com/a']:
             with self.assertRaises(ValueError):import_photos.get(url,100,{'lh3.googleusercontent.com'})
+
+
+    def test_original_metadata_failure_keeps_display_import(self):
+        blob=io.BytesIO(); Image.new('RGB',(80,60),'navy').save(blob,format='JPEG')
+        def fetch(url,*args):
+            return b'unsupported original' if url.endswith('=d') else blob.getvalue()
+        with tempfile.TemporaryDirectory() as t:
+            result=import_photos.import_album([None,[self.row()],None],t,fetch,original_metadata=True)
+            self.assertEqual(len(result['photos']),1)
+            self.assertNotIn('original_metadata_checked',result['photos'][0])
+
+    def test_extract_capture_date_before_display_reencoding(self):
+        blob=io.BytesIO(); exif=Image.Exif();exif[36867]='1999:12:31 18:00:00'
+        Image.new('RGB',(80,60),'navy').save(blob,format='JPEG',exif=exif)
+        with tempfile.TemporaryDirectory() as t:
+            result=import_photos.import_album([None,[self.row()],None],t,lambda *args:blob.getvalue(),original_metadata=True)
+            row=result['photos'][0]
+            self.assertEqual(row['capture_date'],'1999-12-31')
+            self.assertTrue(row['original_metadata_checked'])
+            result=import_photos.import_album([None,[self.row()],None],t,lambda *args:self.fail('Unneeded original request'),original_metadata=True)
+            self.assertEqual(result['photos'][0]['capture_date'],'1999-12-31')

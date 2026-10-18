@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse, urljoin
 import requests
+import photo_metadata
 from PIL import Image, ImageOps
 
 
@@ -57,7 +58,7 @@ def date_taken(row):
         return ''
 
 
-def import_album(data, destination, fetch=get):
+def import_album(data, destination, fetch=get, original_metadata=False):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     (destination/'images').mkdir(exist_ok=True, mode=0o700)
@@ -76,15 +77,25 @@ def import_album(data, destination, fetch=get):
             if not isinstance(identity, str) or not isinstance(media, list): raise ValueError('Unknown media')
             filename = 'images/' + hashlib.sha256(identity.encode()).hexdigest() + '.jpg'
             target = destination/filename
+            item = dict(previous.get(filename, {}), file=filename)
+            if original_metadata and not item.get('original_metadata_checked'):
+                try:
+                    blob = fetch(media[0]+'=d', 30_000_000, {'lh3.googleusercontent.com'})
+                    with Image.open(io.BytesIO(blob)) as original:
+                        item.update(photo_metadata.extract(original))
+                    item['original_metadata_checked'] = True
+                except (OSError, ValueError, requests.RequestException):
+                    pass  # Unsupported originals must not prevent the display import.
             if not target.exists():
                 blob = fetch(media[0]+'=w3840-h2160', 30_000_000, {'lh3.googleusercontent.com'})
                 with Image.open(io.BytesIO(blob)) as image:
+                    for key, value in photo_metadata.extract(image).items():
+                        item.setdefault(key, value)
                     image = ImageOps.exif_transpose(image).convert('RGB')
                     image.thumbnail((3840, 2160), Image.Resampling.LANCZOS)
                     temp = target.with_suffix('.tmp')
                     image.save(temp, format='JPEG', quality=95)
                     temp.replace(target)
-            item = dict(previous.get(filename, {}), file=filename)
             day = date_taken(row)
             if day: item.update(date=day, date_source='Google Photos Date taken (shared album)')
             return item, 0, 0
@@ -113,12 +124,19 @@ def main():
     source.add_argument('--album-url-file', type=Path, help='Private text file holding the shared URL')
     source.add_argument('--saved-page', type=Path, help='Previously saved shared page HTML')
     parser.add_argument('--destination', required=True, type=Path)
+    parser.add_argument('--original-metadata', action='store_true', help='Read original EXIF too; optional pillow-heif enables HEIC')
     args = parser.parse_args(); os.umask(0o077)
+    if args.original_metadata:
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
     try:
         html = (args.saved_page.read_text() if args.saved_page else
                 get(args.album_url_file.read_text().strip(), 5_000_000,
                     {'photos.app.goo.gl','photos.google.com'}).decode('utf-8'))
-        result = import_album(page_data(html), args.destination)
+        result = import_album(page_data(html), args.destination, original_metadata=args.original_metadata)
         print(json.dumps({k:v for k,v in result.items() if k != 'photos'} | {'imported':len(result['photos'])}))
     except Exception as error:
         # Exceptions may embed private shared URLs; never print their text.

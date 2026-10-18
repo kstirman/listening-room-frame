@@ -617,13 +617,12 @@ class Bridge:
             if not self.state.get('owned'):
                 self.state['original'] = current
                 self.save()
-            index = self.state.get('photo_index', -1)
-            index = index if isinstance(index, int) else -1
             output = self.root / 'idle-photo.jpg'
             # A broken cache entry cannot trap the rotation or overwrite TV art.
+            excluded = set()
             for _ in range(min(len(photos), 5)):
-                index = (index + 1) % len(photos)
-                self.state['photo_index'] = index
+                index = idle_photos.choose(photos, self.state, excluded)
+                excluded.add(index)
                 try:
                     layouts.photo(photos[index]['path'], photos[index]['caption'], output)
                     break
@@ -645,6 +644,7 @@ class Bridge:
             self.state['garbage'].remove(content)
             if old:
                 self.state['garbage'].append(old)
+            idle_photos.remember(photos, index, self.state)
             self.state.update(photo_image=content, view='photo')
             self.next_photo = time.monotonic() + idle_photos.interval(self.config)
             self.save()

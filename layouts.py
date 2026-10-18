@@ -3,7 +3,7 @@ import math
 import timing
 import dates
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 
 def font(size):
@@ -218,16 +218,36 @@ def liner(cover_path, title, artist, output, details):
 
 
 def photo(path, caption, output):
-    """Uncropped photo with a quiet caption; respect EXIF orientation."""
+    """Fill the screen and place a readable caption over a local dark scrim."""
     with Image.open(path) as original:
         picture = ImageOps.exif_transpose(original).convert('RGB')
-    canvas = Image.new('RGB', (3840, 2160), (19, 20, 20))
-    bounds = (3680, 1920) if caption else (3840, 2160)
-    art = ImageOps.contain(picture, bounds, Image.Resampling.LANCZOS)
-    center_y = 1020 if caption else 1080
-    canvas.paste(art, ((3840-art.width)//2, center_y-art.height//2))
+    canvas = ImageOps.fit(picture, (3840, 2160), Image.Resampling.LANCZOS)
+    if picture.height > picture.width:
+        canvas = canvas.filter(ImageFilter.GaussianBlur(70))
+        art = ImageOps.contain(picture, canvas.size, Image.Resampling.LANCZOS)
+        canvas.paste(art, ((3840-art.width)//2, (2160-art.height)//2))
     if caption:
+        lines = [part.strip() for part in caption.split('  ·  ') if part.strip()][:3] or ['']
         draw = ImageDraw.Draw(canvas)
-        value, face = fit_text(draw, caption, 3500, 42)
-        draw.text((1920, 2060), value, font=face, fill=(201, 196, 184), anchor='mt')
+        fitted = [fit_text(draw, line, 2400, 78 if n == 0 else 68)
+                  for n, line in enumerate(lines)]
+        height = 105 * len(fitted) + 200
+        # Feathered local shading: no opaque caption box or border around the photo.
+        shade = Image.new('RGBA', (3840, 2160), (0, 0, 0, 0))
+        mask = Image.new('L', (384, 216), 0)
+        pixels = mask.load()
+        top = 216 - height/10
+        left = max(0, (3840-max(draw.textlength(t,font=f) for t,f in fitted)-250)/10)
+        for y in range(max(0, int(top)), 216):
+            vertical = min(1, (y-top)/12)
+            for x in range(max(0, int(left)), 384):
+                pixels[x,y] = round(180 * vertical * min(1, (x-left)/20))
+        shade.putalpha(mask.resize(canvas.size, Image.Resampling.BILINEAR))
+        canvas = Image.alpha_composite(canvas.convert('RGBA'), shade).convert('RGB')
+        draw = ImageDraw.Draw(canvas)
+        y = 2160 - 115 - 105 * len(fitted)
+        for text, face in fitted:
+            draw.text((3720, y), text, font=face, fill='white', anchor='rt',
+                      stroke_width=1, stroke_fill=(25,25,25))
+            y += 105
     canvas.save(output, quality=95)

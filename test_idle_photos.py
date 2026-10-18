@@ -115,3 +115,48 @@ class PhotoTests(unittest.TestCase):
             layouts.photo(self.root/name, 'January 1, 2001  ·  Example place', self.root/'out.jpg')
             with Image.open(self.root/'out.jpg') as image:
                 self.assertEqual(image.size, (3840, 2160))
+
+
+class SelectionTests(unittest.TestCase):
+    def rows(self):
+        return [{'key':str(i), 'date':'2020-01-01' if i<90 else '2020-02-01'} for i in range(100)]
+
+    def test_never_adjacent_same_day_when_other_days_exist(self):
+        import random
+        rows=self.rows();state={'photo_index':0};rng=random.Random(8)
+        for _ in range(20):
+            before=rows[state['photo_index']]['date']
+            index=idle_photos.choose(rows,state,rng=rng)
+            self.assertNotEqual(rows[index]['date'],before)
+            idle_photos.remember(rows,index,state)
+
+    def test_dates_have_equal_weight_despite_burst_size(self):
+        import random
+        from datetime import date
+        rows=self.rows();rng=random.Random(42)
+        counts=sum(idle_photos.choose(rows,{},today=date(2020,6,1),rng=rng)>=90 for _ in range(1000))
+        self.assertTrue(430<counts<570,counts)
+
+    def test_recent_selection_survives_saved_state(self):
+        import random
+        rows=[{'key':str(i),'date':'2020-01-%02d'%(i+1)} for i in range(20)]
+        state={};rng=random.Random(4);chosen=[]
+        for _ in range(20):
+            index=idle_photos.choose(rows,state,rng=rng);chosen.append(index)
+            idle_photos.remember(rows,index,state)
+            state=json.loads(json.dumps(state))
+        self.assertEqual(len(set(chosen)),20)
+
+    def test_failed_candidates_and_small_albums(self):
+        rows=self.rows()[:1]
+        self.assertEqual(idle_photos.choose(rows,{'photo_index':0}),0)
+        self.assertIsNone(idle_photos.choose(rows,{},excluded={0}))
+        self.assertIsNone(idle_photos.choose([],{}))
+
+    def test_seasonal_year_boundary_and_exact_day(self):
+        from datetime import date
+        rng=Mock();rng.random.return_value=0;rng.choice.side_effect=lambda values:values[0]
+        rows=[{'key':'a','date':'2020-06-01'},{'key':'b','date':'2020-12-30'},
+              {'key':'c','date':'2019-01-02'}]
+        self.assertEqual(idle_photos.choose(rows,{},today=date(2026,1,2),rng=rng),2)
+        self.assertEqual(idle_photos.choose(rows[:2],{},today=date(2026,1,2),rng=rng),1)

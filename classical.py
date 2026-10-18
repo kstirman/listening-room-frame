@@ -124,11 +124,43 @@ def catalog(tracks):
    row.update(work=details['work'],movementName=details['movement'])
   ordered[key]=row
  entries=list(ordered.items())
+ def parts(row):
+  title=row.get('title','')
+  # A composer prefix is not a work. Require an exact credited full/last name.
+  head,sep,rest=title.partition(': ')
+  composer=row.get('composer','')
+  if sep and composer and head.casefold() in {composer.casefold(),composer.split()[-1].casefold()}:
+   title=rest
+  work,sep,section=title.partition(': ')
+  act=re.fullmatch(r'(.+?)(?: / |, )(Act [IVX0-9]+)',work)
+  if act:
+   work=act[1];section=act[2]+': '+section
+  return work,sep,section
+ # Repair one catalog-number omission only when both immediate neighbors
+ # agree on the exact work/composer/scope and the same act. Never use album
+ # title similarity to combine unrelated pieces or alternate performances.
+ parsed=[parts(row) for _,row in entries]
+ aliases={}
+ def act_number(section):
+  match=re.match(r'Act ([IVX0-9]+):',section)
+  if not match:return None
+  romans=['I','II','III','IV','V','VI','VII','VIII','IX','X']
+  return int(match[1]) if match[1].isdigit() else romans.index(match[1])+1 if match[1] in romans else None
+ for i in range(1,len(entries)-1):
+  row=entries[i][1];left=entries[i-1][1];right=entries[i+1][1]
+  work,sep,section=parsed[i];lw,ls,lp=parsed[i-1];rw,rs,rp=parsed[i+1]
+  base=re.sub(r', (?:WWV|BWV|K\.?|Op\.?)\s*\d+[a-z]?', '', lw)
+  if (sep and ls and rs and lw==rw and base!=lw and work==base
+      and row.get('composer') and row.get('composer')==left.get('composer')==right.get('composer')
+      and row.get('work_scope')==left.get('work_scope')==right.get('work_scope')
+      and act_number(section) is not None and act_number(section)==act_number(lp)==act_number(rp)):
+   aliases[id(row)]=(lw,sep,section)
+ original_parts=parts
+ def parts(row):
+  return aliases.get(id(row),original_parts(row))
  def prefix(row):
-  # Genre/explicit classical metadata, composer and a nonempty named section
-  # must all be present; never group pop titles just because they use a colon.
   if not normalize(row) or not row.get('composer'):return None
-  work,sep,section=row.get('title','').partition(': ')
+  work,sep,section=parts(row)
   return (work,row['composer'],row.get('work_scope')) if sep and work.strip() and section.strip() else None
  start=0
  while start<len(entries):
@@ -136,7 +168,7 @@ def catalog(tracks):
   while identity and end<len(entries) and prefix(entries[end][1])==identity:end+=1
   if identity and end-start>=2:
    for _,row in entries[start:end]:
-    work,_,section=row['title'].partition(': ')
+    work,_,section=parts(row)
     row.update(work=work,movementName=section,part_group=True)
   start=end
  return ordered

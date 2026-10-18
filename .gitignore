@@ -29,3 +29,9 @@ playback.json
 manager.lock
 worker.lock
 presentation.json
+
+# Private optional liner records and photo imports.
+liner-notes.json
+photos.json
+photo-cache/
+album-url.txt

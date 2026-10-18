@@ -1,5 +1,6 @@
 """Bounded background catalog discovery; no credentials or playback control."""
 import json
+from html.parser import HTMLParser
 import re
 import threading
 import time
@@ -37,7 +38,7 @@ def walk(value):
 def candidates(page, album):
     ids = []
     for item in records(page):
-        if item.get('@type') != 'MusicAlbum' or canonical(item.get('name')) != canonical(album):
+        if item.get('@type') != 'MusicAlbum' or canonical(item.get('name')) not in {canonical(album), canonical(re.sub(r' \([^()]+\)$', '', album))}:
             continue
         url = urlparse(item.get('url', ''))
         if url.hostname not in (None, 'www.qobuz.com', 'qobuz.com'):
@@ -48,14 +49,35 @@ def candidates(page, album):
     return ids
 
 
+class Headings(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.active = False; self.text = []; self.headings = []
+    def handle_starttag(self, tag, attrs):
+        if tag == 'h1': self.active = True; self.text = []
+    def handle_data(self, data):
+        if self.active: self.text.append(data)
+    def handle_endtag(self, tag):
+        if tag == 'h1' and self.active:
+            self.headings.append(''.join(self.text)); self.active = False
+
+
 def album_rows(page, album, artist):
     products = [r for r in records(page) if r.get('@type') == 'Product']
-    if not any(canonical(p.get('name')) == canonical(album) and
-               isinstance(p.get('brand'), dict) and
-               canonical(p['brand'].get('name')) == canonical(artist) for p in products):
-        return None
+    matching = [p for p in products if canonical(p.get('name')) == canonical(album)]
+    # Search results/Product may omit an edition subtitle. Require the exact
+    # full album in the visible catalog heading before accepting that candidate.
+    headings = Headings(); headings.feed(page)
+    full_heading = any(canonical(h).startswith(canonical(album) + ' by ') for h in headings.headings)
+    if not matching and not full_heading:return None
     parser = classical.Tracks(); parser.feed(page)
-    return classical.catalog(parser.tracks)
+    rows = classical.catalog(parser.tracks)
+    album_artist = any(isinstance(p.get('brand'), dict) and
+                       canonical(p['brand'].get('name')) == canonical(artist) for p in (matching or products))
+    for row in rows.values():
+        names = [person.partition(', ')[0] for person in row.get('credits', '').split(' - ')
+                 if 'MainArtist' in [r.strip() for r in person.partition(', ')[2].split(',')]]
+        row['_artist_matches'] = album_artist or canonical(artist) in {canonical(n) for n in names}
+    return rows if any(row['_artist_matches'] for row in rows.values()) else None
 
 
 def fetch(path, params=None):
@@ -114,7 +136,7 @@ class Resolver:
             return None, status
         # Reject editions that match the track even if only one has a complete work.
         selected = [select(metadata, rows) for rows in albums]
-        selected = [item for item in selected if item is not None]
+        selected = [item for item in selected if item is not None and item[0].get('_artist_matches', True)]
         if len(selected) > 1:
             return None, 'ambiguous'
         if not selected:

@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import layouts
 import timing
+import liner_notes
+import idle_photos
 import local_match
 import local_composition
 import library_metadata
@@ -120,6 +122,7 @@ class Bridge:
         self.session = requests.Session()
         self.session.headers['User-Agent'] = 'ListeningRoomArtwork/1.0'
         self.stopped_at = None
+        self.next_photo = 0
         self.blocked_album = None
         self.running = True
         self.pages = {}
@@ -353,7 +356,13 @@ class Bridge:
                 enriched.update(row)
         elif automatic:
             catalog_status = 'matched'
+        notes = {}
+        if self.config.get('liner_notes_enabled', True):
+            notes = liner_notes.lookup(metadata, self.config)
+            notes.update(liner_notes.extract(enriched))
         details = classical.normalize(enriched)
+        if any(notes.get(k) for k in ('personnel', 'songwriters', 'recordingLocation', 'label', 'producer', 'engineer', 'note')):
+            details = dict(details or {}, liner_notes=notes)
         if catalog_status:
             details = dict(details or {}, catalog_status=catalog_status)
         track_title = enriched.get('title') or metadata.get('title')
@@ -392,6 +401,10 @@ class Bridge:
             layouts.roon(self.root / entry['cover'], metadata[metadata['source'] + '_lines'], image, duration_seconds=(details or {}).get('duration_seconds'))
         elif details and details.get('work') and entry:
             layouts.classical(self.root / entry['cover'], details, image)
+        elif entry and (details or {}).get('liner_notes'):
+            title = (details or {}).get('display_album') or title
+            artist = (details or {}).get('display_artist') or entry.get('artist', '')
+            layouts.liner(self.root / entry['cover'], title, artist, image, details)
         elif entry:
             title = (details or {}).get('display_album') or title
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
@@ -484,7 +497,7 @@ class Bridge:
         return output, title
 
     def owned_ids(self):
-        return {self.state.get(name) for name in ('owned', 'album_image', 'collage_image')} - {None}
+        return {self.state.get(name) for name in ('owned', 'album_image', 'collage_image', 'photo_image')} - {None}
 
     def select(self, tv, content):
         self.phase = 'tv-select'
@@ -565,12 +578,78 @@ class Bridge:
                     raise RuntimeError('Restore not confirmed')
                 LOG.info('Original artwork restored')
             self.state.setdefault('garbage', []).extend(owned)
-            for field in ('owned', 'album', 'album_image', 'collage_image', 'collage_revision', 'view', 'pending'):
+            for field in ('owned', 'album', 'album_image', 'collage_image', 'collage_revision', 'photo_image', 'view', 'pending'):
                 self.state.pop(field, None)
             self.collage_until = None
             self.next_collage = time.monotonic() + self.config.get('collage_interval_seconds', 120)
             self.save()
             self.cleanup(tv)
+        finally:
+            tv.close()
+
+    def show_idle_photo(self):
+        """Rotate cached photos only while idle; preserve manual TV selections."""
+        if self.state.get('idle_photo_blocked'):
+            return
+        now = time.monotonic()
+        if self.state.get('view') == 'photo' and now < self.next_photo and now - self.last_tv_check < 30:
+            return
+        photos = idle_photos.load(self.config)
+        if not photos:
+            self.restore()
+            return
+        tv = self.television()
+        if tv is None:
+            return
+        try:
+            if tv.get_artmode() != 'on':
+                return
+            current = tv.get_current()['content_id']
+            self.last_tv_check = time.monotonic()
+            owned = self.owned_ids() | {self.state.get('pending')}
+            if self.state.get('owned') and current not in owned:
+                # A manual art choice lasts until the next music session.
+                self.state['idle_photo_blocked'] = True
+                self.save()
+                return
+            if self.state.get('view') == 'photo' and now < self.next_photo:
+                return
+            if not self.state.get('owned'):
+                self.state['original'] = current
+                self.save()
+            index = self.state.get('photo_index', -1)
+            index = index if isinstance(index, int) else -1
+            output = self.root / 'idle-photo.jpg'
+            # A broken cache entry cannot trap the rotation or overwrite TV art.
+            for _ in range(min(len(photos), 5)):
+                index = (index + 1) % len(photos)
+                self.state['photo_index'] = index
+                try:
+                    layouts.photo(photos[index]['path'], photos[index]['caption'], output)
+                    break
+                except (OSError, ValueError):
+                    LOG.warning('Skipping unreadable cached photo')
+            else:
+                self.save()
+                return
+            self.phase = 'photo-upload'
+            content = tv.upload(str(output), matte='none')
+            old = self.state.get('photo_image')
+            self.state.setdefault('garbage', []).append(content)
+            self.save()
+            self._selecting_photo = True
+            try:
+                self.select(tv, content)
+            finally:
+                self._selecting_photo = False
+            self.state['garbage'].remove(content)
+            if old:
+                self.state['garbage'].append(old)
+            self.state.update(photo_image=content, view='photo')
+            self.next_photo = time.monotonic() + idle_photos.interval(self.config)
+            self.save()
+            self.cleanup(tv)
+            LOG.info('Idle photo displayed')
         finally:
             tv.close()
 
@@ -603,10 +682,15 @@ class Bridge:
                             self.rotate(tv, time.monotonic())
                     finally:
                         tv.close()
-            if time.monotonic() - self.stopped_at >= self.config['idle_seconds']:
-                self.restore()
+            if status in ('STOPPED', 'PAUSED_PLAYBACK', 'PAUSED', 'NO_MEDIA_PRESENT') and time.monotonic() - self.stopped_at >= self.config['idle_seconds']:
+                if self.config.get('idle_photos_enabled', False):
+                    self.show_idle_photo()
+                else:
+                    self.restore()
             return
         self.stopped_at = None
+        if self.state.pop('idle_photo_blocked', None):
+            self.save()
         album = self.album_key(metadata)
         if not album:
             self.restore()
@@ -616,7 +700,7 @@ class Bridge:
         self.phase = 'metadata-lookup'
         details = self.details(metadata)
         display_key = album + ':' + json.dumps(details, sort_keys=True, ensure_ascii=False)
-        display_changed = self.state.get('display_key', album + ':null') != display_key
+        display_changed = self.state.get('view') == 'photo' or self.state.get('display_key', album + ':null') != display_key
         now = time.monotonic()
         due = (now >= self.collage_until if self.collage_until is not None else now >= self.next_collage)
         if (album == self.state.get('album') and self.state.get('owned')
@@ -661,6 +745,10 @@ class Bridge:
             self.state.update(album_image=content, album=album, title=title, display_key=display_key, classical=details)
             if not in_collage:
                 self.state['view'] = 'album'
+                old_photo = self.state.pop('photo_image', None)
+                if old_photo:
+                    self.state['garbage'].append(old_photo)
+                    self.next_collage = time.monotonic() + self.config.get('collage_interval_seconds', 120)
             self.save()
             self.cleanup(tv)
             self.rotate(tv, time.monotonic())

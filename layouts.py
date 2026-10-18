@@ -162,3 +162,72 @@ def track_timing(draw, details, x, y, width):
         text = f'{i+1}  {timing.label(length)}'
         draw.text((x+(i%columns)*width/columns, y+110+(i//columns)*46), text,
                   font=font(32), fill=(237,197,125) if i == index else (164,163,151), anchor='lt')
+
+
+def liner(cover_path, title, artist, output, details):
+    """A record sleeve with bounded, track-specific liner notes."""
+    cover=Image.open(cover_path).convert('RGB')
+    canvas=Image.new('RGB',(3840,2160),palette(cover))
+    draw=ImageDraw.Draw(canvas); paper=(242,235,219); muted=(185,180,165); gold=(205,173,115)
+    art=ImageOps.contain(cover,(1570,1570),Image.Resampling.LANCZOS)
+    canvas.paste(art,(150+(1570-art.width)//2,200+(1570-art.height)//2))
+    draw.line((1840,200,1840,1935),fill=gold,width=3)
+    x=1970;width=1680;y=200
+    def block(value,size=46,color=paper,lines=2,gap=22):
+        nonlocal y
+        if not value:return
+        words=str(value).split();rows=[];line=''
+        for word in words:
+            candidate=(line+' '+word).strip()
+            if draw.textlength(candidate,font=font(size))>width and line:
+                rows.append(line);line=word
+            else:line=candidate
+        if line:rows.append(line)
+        clipped=len(rows)>lines;rows=rows[:lines]
+        if clipped:rows[-1]+='…'
+        for row in rows:
+            row,f=fit_text(draw,row,width,size)
+            draw.text((x,y),row,font=f,fill=color,anchor='lt');y+=round(size*1.28)
+        y+=gap
+    notes=details['liner_notes']
+    block('LINER NOTES',32,gold,1,34)
+    block(details.get('display_track') or title,76,paper,2,22)
+    block(artist,50,muted,1,22)
+    block(title,36,muted,2,35)
+    if notes.get('personnel'):
+        block('ON THIS TRACK',30,gold,1,22)
+        for person in notes['personnel'][:6]:
+            block(person['name']+'  ·  '+person['role'],43,paper,1,16)
+        if len(notes['personnel'])>6:block('Additional credits in the reviewed notes',32,muted,1,12)
+    if notes.get('songwriters'):block('Written by  '+notes['songwriters'],37,muted,2,22)
+    # Reserve a stable bottom area; long credits never collide with session detail.
+    y=max(y,1250)
+    for name,label in [('producer','Produced by'),('engineer','Recorded / mixed by'),('recordingLocation','Sessions')]:
+        if notes.get(name) and y<1580:block(label+'  '+notes[name],34,muted,2,18)
+    if notes.get('note') and y<1770:block(notes['note'],36,paper,3,20)
+    footer=[]
+    if notes.get('recordingDate'):footer.append('Recorded '+notes['recordingDate'])
+    release=notes.get('originalReleaseDate') or notes.get('releaseDate')
+    if release:footer.append(('Originally released ' if notes.get('originalReleaseDate') else 'Released ')+release)
+    if notes.get('label'):footer.append(notes['label'])
+    text,f=fit_text(draw,'  ·  '.join(footer),3460,38)
+    draw.text((150,2010),text,font=f,fill=muted,anchor='lt')
+    duration=timing.label(details.get('duration_seconds'))
+    if duration:draw.text((150,1840),'TRACK LENGTH  '+duration,font=font(36),fill=gold,anchor='lt')
+    canvas.save(output,quality=95)
+
+
+def photo(path, caption, output):
+    """Uncropped photo with a quiet caption; respect EXIF orientation."""
+    with Image.open(path) as original:
+        picture = ImageOps.exif_transpose(original).convert('RGB')
+    canvas = Image.new('RGB', (3840, 2160), (19, 20, 20))
+    bounds = (3680, 1920) if caption else (3840, 2160)
+    art = ImageOps.contain(picture, bounds, Image.Resampling.LANCZOS)
+    center_y = 1020 if caption else 1080
+    canvas.paste(art, ((3840-art.width)//2, center_y-art.height//2))
+    if caption:
+        draw = ImageDraw.Draw(canvas)
+        value, face = fit_text(draw, caption, 3500, 42)
+        draw.text((1920, 2060), value, font=face, fill=(201, 196, 184), anchor='mt')
+    canvas.save(output, quality=95)

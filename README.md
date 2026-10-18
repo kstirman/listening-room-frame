@@ -344,3 +344,35 @@ Audirvana proxy tracks that uniquely match a reviewed local recording now reuse 
 For new uploads, [portable intake](intake/README.md) prepares reviewed tags and embedded covers in copies, preserves originals, and verifies unchanged decoded audio. This makes approved information available to players without requiring their access to the Frame correction database. Player-specific field visibility and library refresh still require verification; existing library files are not rewritten.
 
 Audirvana local matching also accepts exact reviewed conductor, orchestra, or soloist credits when the controller presents one of these as the artist. Album, title, duration and unique-file checks remain mandatory; partial names and composer-only matches are not accepted. Both common album-artist tag spellings are supported.
+
+### Reviewed liner notes
+
+Nonclassical UPnP tracks with reviewed liner metadata use a large-cover / liner-notes layout. Supported fields are `personnel` (a list of `{name, role}` for the current track), `songwriters`, `recordingDate`, `recordingLocation`, `releaseDate`, `originalReleaseDate`, `label`, `producer`, `engineer`, and a short original `note`. Unknown fields are omitted; recording and release dates stay distinct. Classical work/movement display takes priority. Existing source-specific Roon/Sonos layouts remain in place.
+
+Fields can come from per-track enrichment or a private JSON file configured as `liner_notes_file`. Its `albums` list contains exact `album`, `artist`, `review_status: "reviewed"`, evidence `source`, optional album `fields`, and `tracks`: each track requires exact `title`, `duration_seconds`, and its own `fields`. A single title/artist/album/duration match (within two seconds for catalog rounding) is required. Album-wide personnel are never labeled as track credits. Keep researched records outside the public repository. Set `liner_notes_enabled: false` and restart the artwork service to restore the prior layout. File edits take effect on metadata cache refresh or artwork-service restart. A record should preserve source, review date and edition uncertainty outside display fields.
+
+### Idle photos
+
+The optional photo playlist begins after the existing pause/stop grace period and returns to the current music card when playback resumes. It only operates in Art Mode. TV power/input controls are never sent. Manual artwork changes suspend photos until another music session; stopping the artwork service restores the prior art if the current image still belongs to the bridge.
+
+Keep the playlist and images in a private directory outside this repository. Configure:
+
+```json
+{
+  "idle_photos_enabled": true,
+  "idle_photos_file": "/private/photo-cache/photos.json",
+  "idle_photo_interval_seconds": 120
+}
+```
+
+The manifest contains `photos: [{"file": "images/example.jpg", "date": "2001-01-01", "date_source": "EXIF DateTimeOriginal", "location": "Example city", "location_source": "Reviewed photo information"}]`. Paths must remain inside its directory. Dates and places without provenance are omitted. Images remain uncropped, honor EXIF orientation, and are rendered at 3840×2160. Unknown dates/places are never guessed. No automatic historical chart captions are generated.
+
+For a Google Photos shared album, save the shared link in a private text file, then explicitly import it:
+
+```sh
+python import_photos.py --album-url-file /private/album-url.txt --destination /private/photo-cache
+```
+
+This is a bounded, unofficial shared-page import, **not an account sync**. It imports up to the first 300 media records, skips videos, and reports `more_available` when the album has later pages. It does not claim complete album coverage or automatically import future additions. Repeat the explicit import to refresh that initial page; reviewed location captions and existing cached photos are preserved. A failed/empty import retains the previous playlist. Shared-page changes can break the importer; a manually prepared manifest remains usable offline. Google Photos API shared-album access was removed in the [2025 API changes](https://developers.google.com/photos/support/updates).
+
+Catalog matching also accepts exact per-track MainArtist credits when the album's lead artist differs. Search candidates with omitted edition subtitles still require an exact full album heading before use. Classical opera acts stay under the whole work; a single missing catalog number is bridged only when both adjacent tracks agree on work, composer, scope, and act. Duplicate sections, conflicting works, incomplete timing, and ambiguous recordings continue to fail closed.

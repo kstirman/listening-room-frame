@@ -91,3 +91,14 @@ class ImageHTTPTests(unittest.TestCase):
         (display/'state.json').write_text(json.dumps({'history':[{'cover':'../../api-token','title':'bad'},{'cover':'covers/'+'a'*64+'.jpg','title':'Example'}]}))
         recent=self.app.status()['recent']
         self.assertEqual(len(recent),1);self.assertEqual(recent[0]['title'],'Example')
+
+class PhotoPreviewTests(unittest.TestCase):
+    def test_photo_selection_publishes_actual_photo(self):
+        with tempfile.TemporaryDirectory() as t:
+            b=PreviewBridge({},Path(t)/'display')
+            image=b.root/'idle-photo.jpg';Image.new('RGB',(80,60),'navy').save(image)
+            b._selecting_photo=True
+            tv=Mock();tv.get_current.return_value={'content_id':'PHOTO'}
+            b.select(tv,'PHOTO')
+            self.assertEqual(json.loads((Path(t)/'presentation.json').read_text())['kind'],'photo')
+            self.assertEqual((Path(t)/'preview.jpg').read_bytes(),image.read_bytes())

@@ -46,9 +46,11 @@ class PreviewBridge(Bridge):
         # Bridge.select verifies the returned current content ID before returning.
         super().select(tv,content)
         collage = content == self.state.get('collage_image')
-        image = self.root/('collage.jpg' if collage else 'current-cover.jpg')
+        photo = self.phase == 'tv-select' and getattr(self, '_selecting_photo', False)
+        kind = 'photo' if photo else 'collage' if collage else 'album'
+        image = self.root/('idle-photo.jpg' if photo else 'collage.jpg' if collage else 'current-cover.jpg')
         if image.exists():
-            self.publish(image,confirmed=True,kind='collage' if collage else 'album')
+            self.publish(image,confirmed=True,kind=kind)
 
     def restore(self):
         had_owned = bool(self.owned_ids() or self.state.get('pending'))

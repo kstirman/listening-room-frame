@@ -1,0 +1,2 @@
+# Optional original HEIC metadata support in the artwork environment.
+pillow-heif==1.8.1

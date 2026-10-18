@@ -17,5 +17,11 @@
   "local_art_overrides": {},
   "liner_notes_enabled": true,
   "idle_photos_enabled": false,
-  "idle_photo_interval_seconds": 120
+  "idle_photo_interval_seconds": 120,
+  "photo_stream_enabled": false,
+  "photo_stream_dir": "/private/photo-stream",
+  "photo_stream_url_file": "/private/album-url.txt",
+  "photo_prefetch_count": 10,
+  "photo_cache_mb": 128,
+  "photo_places_file": null
 }

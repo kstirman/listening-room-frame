@@ -397,3 +397,40 @@ Unsupported originals leave display import working. GPS remains private metadata
 this importer performs no network geocoding and does not invent place names.
 EXIF capture dates are retained separately from the shared album's displayed date,
 which can reflect user corrections. Never publish photo manifests or metadata.
+
+
+### Whole-album metadata index with a small photo queue
+
+Enable `photo_stream_enabled`, set `photo_stream_url_file` to a private text file
+containing your shared album link, and set `photo_stream_dir` to a private directory
+outside the source checkout. The existing `idle_photos_file` can remain as an
+offline fallback. Install optional HEIC support with
+`pip install -r requirements-photos.txt` in the artwork virtual environment.
+
+A background worker follows the shared website's continuation requests, indexes
+metadata in SQLite, and fetches only selected photos. It runs a recent-page check
+at startup/every four hours and a complete weekly reconciliation. Older additions
+may require the full pass. Only a completed scan can retire missing records; failed
+or incomplete scans retain prior membership and back off for fifteen minutes.
+Expired image links request a bounded full metadata refresh.
+
+The default queue is ten upcoming images plus the current image, under a128MiB
+disk budget. A brief overlap of at most one previous queue protects in-progress
+rendering. The worker evicts old image files but retains extracted EXIF and sourced
+place captions. It does not download the whole image collection. Failed originals
+fall back to display-size images; unavailable GPS is omitted. Render and TV selection
+stay on the existing music-aware path, with no network retrieval in the photo
+display operation. The initial index and queue preparation are asynchronous.
+
+`status.json` in the private cache reports indexing dates, queue size, disk usage
+and sanitized error types. A successful index scan is not proof that every original
+photo is downloadable. Unofficial web-page/RPC changes can break discovery.
+
+Optional `photo_places_file` accepts a GeoNames populated-place CSV with columns
+`lat,lon,name,admin1,cc` (the reverse_geocoder project's `rg_cities1000.csv` format).
+Place matching stays offline; captions say “Near” and omit matches over25miles.
+Data attribution: [GeoNames](https://www.geonames.org/) under CC BY; obtain the
+dataset separately and keep photo GPS/private metadata out of the public repository.
+The web pagination request format was checked against the referenced open-source
+implementation in THIRD_PARTY_NOTICES.md. No cookies or Google account credentials
+are required for an accessible shared link.

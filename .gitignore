@@ -35,3 +35,8 @@ liner-notes.json
 photos.json
 photo-cache/
 album-url.txt
+
+# Private photo streaming index, shared link and queue.
+photo-stream/
+index.sqlite3*
+ready.json

@@ -16,6 +16,7 @@ import layouts
 import timing
 import liner_notes
 import idle_photos
+from photo_stream import Stream
 import local_match
 import local_composition
 import library_metadata
@@ -130,6 +131,7 @@ class Bridge:
         self.local_compositions = local_composition.Catalog()
         self.local_matches = local_match.Index()
         self.auto_catalog = auto_catalog.Resolver()
+        self.photo_stream = Stream(config) if config.get("photo_stream_enabled", False) else None
         self.local_index = {}
         self.index_at = 0
         self.last_tv_check = 0
@@ -594,7 +596,9 @@ class Bridge:
         now = time.monotonic()
         if self.state.get('view') == 'photo' and now < self.next_photo and now - self.last_tv_check < 30:
             return
-        photos = idle_photos.load(self.config)
+        photos = self.photo_stream.available() if self.photo_stream else []
+        if not photos:
+            photos = idle_photos.load(self.config)
         if not photos:
             self.restore()
             return
@@ -666,6 +670,8 @@ class Bridge:
             self._last_playback_signature = signature
 
     def step(self):
+        if self.photo_stream:
+            self.photo_stream.tick(self.state)
         self.phase = 'playback-query'
         status, metadata = self.playback()
         self.observe_playback(status, metadata)

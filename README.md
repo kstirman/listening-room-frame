@@ -434,3 +434,12 @@ dataset separately and keep photo GPS/private metadata out of the public reposit
 The web pagination request format was checked against the referenced open-source
 implementation in THIRD_PARTY_NOTICES.md. No cookies or Google account credentials
 are required for an accessible shared link.
+
+
+### Permanent private photo exclusions
+
+Set `photo_exclusions_file` to a private JSON file with `schema: 1`, `content_keys`, and `media_keys` arrays. Values are lowercase SHA-256 hashes: content keys hash Google shared metadata dedupKey strings; media keys hash album media identifiers. Import these once from an explicitly selected exclusion collection, including items not yet in the display album. Keep the file outside public source. No scheduled exclusion-album access is required.
+
+The index retains content identifiers across refreshes. Exclusions apply before download and manifest display, including the legacy fallback. Missing, malformed, or unreadable configured exclusions and photos without content identifiers are ineligible. A preexisting index needs a complete metadata refresh or verified content-key backfill before all allowed images are available. Blocked cached stream images are removed even if marked current. Existing deployments should stop the artwork worker, back up and migrate the index, sanitize queued/fallback manifests and display history, then restart only the artwork service. Originals and Google album membership are never modified.
+
+This matches exact Google content identities; edited copies with different identities and omissions from the selected exclusion collection are not automatically recognized. Any future personal-photo collage must use the same eligibility check.

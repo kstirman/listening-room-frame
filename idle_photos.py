@@ -3,6 +3,7 @@ from datetime import date
 import json
 import random
 from pathlib import Path
+from photo_exclusions import Exclusions
 
 
 def clean(value, limit=200):
@@ -37,10 +38,13 @@ def load(config):
         data = json.loads(raw)
         if not isinstance(data, dict) or not isinstance(data.get('photos'), list):
             return []
+        exclusions = Exclusions(config)
         photos = []
         seen = set()
         for row in data['photos'][:10000]:
             if not isinstance(row, dict) or not isinstance(row.get('file'), str):
+                continue
+            if not exclusions.allows(row):
                 continue
             relative = Path(row['file'])
             image = (manifest.parent / relative).resolve()

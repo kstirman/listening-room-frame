@@ -16,6 +16,7 @@ import photo_metadata
 from photo_places import Places
 from shared_album import Client, AlbumError
 from import_photos import get
+from photo_exclusions import Exclusions
 
 LOG=logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ class Index:
               extra TEXT DEFAULT '{}', failure_until REAL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT);
         ''')
+        if 'content_key' not in {r[1] for r in self.db.execute('PRAGMA table_info(photos)')}:
+            self.db.execute('ALTER TABLE photos ADD COLUMN content_key TEXT')
+            self.db.commit()
         self.path.chmod(0o600)
 
     def close(self):self.db.close()
@@ -52,12 +56,13 @@ class Index:
         self.db.commit()
 
     def upsert(self,rows,generation):
-        self.db.executemany('''INSERT INTO photos(key,url,date,width,height,video,generation)
-          VALUES(:key,:url,:date,:width,:height,:video,:generation)
+        self.db.executemany('''INSERT INTO photos(key,url,date,width,height,video,generation,content_key)
+          VALUES(:key,:url,:date,:width,:height,:video,:generation,:content_key)
           ON CONFLICT(key) DO UPDATE SET url=excluded.url,date=excluded.date,
           width=excluded.width,height=excluded.height,video=excluded.video,
           generation=excluded.generation,active=1,
-          failure_until=CASE WHEN photos.url!=excluded.url THEN 0 ELSE photos.failure_until END''',[dict(r,generation=generation) for r in rows])
+          content_key=COALESCE(excluded.content_key,photos.content_key),
+          failure_until=CASE WHEN photos.url!=excluded.url THEN 0 ELSE photos.failure_until END''',[dict(r,generation=generation,content_key=r.get('content_key')) for r in rows])
         self.db.commit()
 
     def finish(self,generation,now):
@@ -117,7 +122,7 @@ class Stream:
         with self.lock:return copy.deepcopy(self.state)
 
     def available(self):
-        return idle_photos.load({'idle_photos_enabled':True,'idle_photos_file':str(self.manifest)})
+        return idle_photos.load(dict(self.config,idle_photos_enabled=True,idle_photos_file=str(self.manifest)))
 
     def refresh(self,index,full):
         now=self.clock();generation=str(now)
@@ -136,6 +141,8 @@ class Stream:
         return pages
 
     def prepare(self,row,index):
+        if not Exclusions(self.config).allows(row):
+            raise ValueError('Photo excluded')
         key=row['key'];target=self.images/(key+'.jpg')
         extra=json.loads(row['extra'])
         original=(not extra.get('original_metadata_checked') and
@@ -165,7 +172,7 @@ class Stream:
             try:extra.update(self.places.lookup(extra))
             except (OSError,ValueError,KeyError):pass
         index.extra(key,extra)
-        return dict(extra,file='images/'+key+'.jpg',date=row['date'],
+        return dict(extra,file='images/'+key+'.jpg',content_key=row.get('content_key'),date=row['date'],
                     date_source='Google Photos Date taken (shared album)')
 
     def queued(self):
@@ -176,10 +183,19 @@ class Stream:
 
     def fill(self,index):
         state=self.snapshot();recent=state.get('photo_recent',[]);current=state.get('photo_key')
-        rows=index.rows(self.clock());by_key={r['key']:r for r in rows}
+        exclusions=Exclusions(self.config)
+        all_rows=index.rows(float('inf'))
+        blocked={r['key'] for r in all_rows if not exclusions.allows(r)}
+        # Exclusions override current-photo retention and the brief cache overlap.
+        for key in blocked:
+            for suffix in ('.jpg','.tmp'):
+                if re.fullmatch(r'[a-f0-9]{64}',key):
+                    (self.images/(key+suffix)).unlink(missing_ok=True)
+        rows=[r for r in index.rows(self.clock()) if exclusions.allows(r)];by_key={r['key']:r for r in rows}
         queue=[p for p in self.queued() if p['file'][7:-4] in by_key and (p['file']==current or p['file'] not in recent)]
         # Refresh changed dates/captions without downloading existing queued images.
         queue=[dict(json.loads(by_key[p['file'][7:-4]]['extra']),file=p['file'],
+                    content_key=by_key[p['file'][7:-4]].get('content_key'),
                     date=by_key[p['file'][7:-4]]['date'],date_source='Google Photos Date taken (shared album)') for p in queue]
         queue=queue[:self.count+1]
         choices=[{'key':'images/'+r['key']+'.jpg','date':r['date'] or ''} for r in rows]

@@ -23,5 +23,6 @@
   "photo_stream_url_file": "/private/album-url.txt",
   "photo_prefetch_count": 10,
   "photo_cache_mb": 128,
-  "photo_places_file": null
+  "photo_places_file": null,
+  "photo_exclusions_file": ""
 }

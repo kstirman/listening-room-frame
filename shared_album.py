@@ -63,7 +63,8 @@ def media_row(row):
         if type(media[1]) is not int or type(media[2]) is not int or min(media[1:3])<=0:
             raise ValueError()
         key=hashlib.sha256(identity.encode()).hexdigest()
-        return {'key':key,'url':url,'date':date_taken(row),'width':media[1], 'height':media[2],
+        content_key=hashlib.sha256(row[3].encode()).hexdigest() if isinstance(row[3],str) and row[3] else None
+        return {'key':key,'content_key':content_key,'url':url,'date':date_taken(row),'width':media[1], 'height':media[2],
                 'video':any(isinstance(v,dict) and '76647426' in v for v in row[6:])}
     except (ValueError,TypeError,IndexError):
         raise AlbumError('Unrecognized media record') from None

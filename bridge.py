@@ -628,7 +628,11 @@ class Bridge:
                 index = idle_photos.choose(photos, self.state, excluded)
                 excluded.add(index)
                 try:
-                    layouts.photo(photos[index]['path'], photos[index]['caption'], output)
+                    group = idle_photos.portrait_group(photos, index, self.state)
+                    if len(group) > 1:
+                        layouts.photo_panels([photos[i] for i in group], output)
+                    else:
+                        layouts.photo(photos[index]['path'], photos[index]['caption'], output)
                     break
                 except (OSError, ValueError):
                     LOG.warning('Skipping unreadable cached photo')
@@ -648,6 +652,8 @@ class Bridge:
             self.state['garbage'].remove(content)
             if old:
                 self.state['garbage'].append(old)
+            for sibling in group[1:]:
+                idle_photos.remember(photos, sibling, self.state)
             idle_photos.remember(photos, index, self.state)
             self.state.update(photo_image=content, view='photo')
             self.next_photo = time.monotonic() + idle_photos.interval(self.config)

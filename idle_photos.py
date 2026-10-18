@@ -3,6 +3,8 @@ from datetime import date
 import json
 import random
 from pathlib import Path
+from itertools import combinations
+from PIL import Image
 from photo_exclusions import Exclusions
 
 
@@ -10,13 +12,23 @@ def clean(value, limit=200):
     return ' '.join(value.split())[:limit] if isinstance(value, str) else ''
 
 
-def caption(row):
+def caption(row, today=None):
     """Only display sourced dates/places; never infer either from pixels."""
     parts = []
+    today = today or date.today()
     if row.get('date_source') and row.get('date'):
         try:
             day = date.fromisoformat(row['date'])
-            parts.append(day.strftime('%B ') + str(day.day) + day.strftime(', %Y'))
+            exact = day.strftime('%B ') + str(day.day) + day.strftime(', %Y')
+            years = today.year - day.year - ((today.month, today.day) < (day.month, day.day))
+            anniversary = (day.month, day.day) == (today.month, today.day)
+            relative = str(years) + (' year ago' if years == 1 else ' years ago')
+            if years > 0 and anniversary:
+                parts.extend(['On this day ' + relative, exact])
+            else:
+                parts.append(exact)
+                if years > 0:
+                    parts.append(relative)
         except (ValueError, TypeError):
             pass
     if row.get('location_source') and clean(row.get('location')):
@@ -68,7 +80,7 @@ def load(config):
 
 def interval(config):
     try:
-        return max(30, min(86400, int(config.get('idle_photo_interval_seconds', 120))))
+        return max(20, min(86400, int(config.get('idle_photo_interval_seconds', 120))))
     except (ValueError, TypeError, OverflowError):
         return 120
 
@@ -131,3 +143,32 @@ def remember(photos, index, state):
     state.update(photo_index=index, photo_key=row['key'], photo_date=row['date'],
                  photo_recent=(recent + [row['key']])[-100:],
                  photo_recent_dates=(days + [row['date']])[-7:])
+
+
+def portrait_group(photos, primary, state):
+    """Use only already eligible, prepared photos; no network or extra prefetch."""
+    ratios = {}
+    for i, row in enumerate(photos):
+        try:
+            with Image.open(row['path']) as image:
+                width, height = image.size
+                if image.getexif().get(274) in (5, 6, 7, 8):
+                    width, height = height, width
+            if 0 < width < height:
+                ratios[i] = width / height
+        except (OSError, ValueError):
+            pass
+    if primary not in ratios:
+        return [primary]
+    others = [i for i in ratios if i != primary]
+    fresh = [i for i in others if photos[i]['key'] not in state.get('photo_recent', [])]
+    others = (fresh or others)[:20]
+    options = [(primary,) + group for count in (1, 2)
+               for group in combinations(others, count)]
+    if not options:
+        return [primary]
+    # Prefer the combination that fills most screen area without cropping.
+    def score(group):
+        ratio = sum(ratios[i] for i in group) / (16 / 9)
+        return min(ratio, 1 / ratio)
+    return list(max(options, key=score))

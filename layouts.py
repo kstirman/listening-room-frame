@@ -223,7 +223,7 @@ def photo(path, caption, output):
         picture = ImageOps.exif_transpose(original).convert('RGB')
     canvas = ImageOps.fit(picture, (3840, 2160), Image.Resampling.LANCZOS)
     if picture.height > picture.width:
-        canvas = canvas.filter(ImageFilter.GaussianBlur(70))
+        canvas = Image.new('RGB', (3840, 2160), (12, 12, 12))
         art = ImageOps.contain(picture, canvas.size, Image.Resampling.LANCZOS)
         canvas.paste(art, ((3840-art.width)//2, (2160-art.height)//2))
     if caption:
@@ -250,4 +250,43 @@ def photo(path, caption, output):
             draw.text((3720, y), text, font=face, fill='white', anchor='rt',
                       stroke_width=1, stroke_fill=(25,25,25))
             y += 105
+    canvas.save(output, quality=95)
+
+
+def photo_panels(photos, output):
+    """Two or three uncropped portraits, each with its own sourced caption."""
+    if not 2 <= len(photos) <= 3:
+        raise ValueError('Portrait panels require two or three photos')
+    pictures = []
+    for row in photos:
+        with Image.open(row['path']) as image:
+            pictures.append(ImageOps.exif_transpose(image).convert('RGB'))
+    gap = 16
+    available = 3840 - gap * (len(pictures) - 1)
+    height = min(2160, int(available / sum(p.width / p.height for p in pictures)))
+    widths = [round(height * p.width / p.height) for p in pictures]
+    canvas = Image.new('RGB', (3840, 2160), (12, 12, 12))
+    x = (3840 - sum(widths) - gap * (len(pictures) - 1)) // 2
+    y = (2160 - height) // 2
+    for row, picture, width in zip(photos, pictures, widths):
+        panel = picture.resize((width, height), Image.Resampling.LANCZOS)
+        lines = [s.strip() for s in row.get('caption', '').split('  ·  ') if s.strip()][:3]
+        if lines:
+            draw = ImageDraw.Draw(panel)
+            fitted = [fit_text(draw, line, max(100, width - 100), 66 if n == 0 else 56)
+                      for n, line in enumerate(lines)]
+            shade_height = min(height, 100 + len(lines) * 90)
+            shade = Image.new('RGBA', panel.size, (0, 0, 0, 0))
+            paint = ImageDraw.Draw(shade)
+            for offset in range(shade_height):
+                paint.line((0, height - shade_height + offset, width, height - shade_height + offset),
+                           fill=(0, 0, 0, round(190 * offset / shade_height)))
+            panel = Image.alpha_composite(panel.convert('RGBA'), shade).convert('RGB')
+            draw = ImageDraw.Draw(panel)
+            baseline = height - 60 - len(lines) * 90
+            for text, face in fitted:
+                draw.text((width - 50, baseline), text, font=face, fill='white', anchor='rt',
+                          stroke_width=1, stroke_fill=(25, 25, 25))
+                baseline += 90
+        canvas.paste(panel, (x, y)); x += width + gap
     canvas.save(output, quality=95)

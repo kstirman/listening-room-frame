@@ -53,6 +53,21 @@ class PhotoTests(unittest.TestCase):
         self.assertEqual(self.b.state['original'], 'ORIGINAL')
         self.b.restore(); self.assertEqual(self.current, 'ORIGINAL')
 
+    def test_twenty_second_rotation(self):
+        self.b.config['idle_photo_interval_seconds'] = 20
+        self.step(120); self.assertEqual(self.current, 'PHOTO1')
+        self.step(139); self.assertEqual(self.tv.upload.call_count, 1)
+        self.step(140); self.assertEqual(self.current, 'PHOTO2')
+        self.assertEqual(idle_photos.interval({'idle_photo_interval_seconds': 1}), 20)
+
+    def test_portrait_group_history_only_after_tv_success(self):
+        self.manifest.write_text(json.dumps({'photos': [{'file':'one.jpg'}, {'file':'two.jpg'}, {'file':'three.jpg'}]}))
+        Image.new('RGB', (80, 120), 'green').save(self.root/'three.jpg')
+        with patch('idle_photos.choose', return_value=0), patch('bridge.layouts.photo_panels') as render:
+            self.step(120)
+        self.assertEqual(len(render.call_args.args[0]), 2)
+        self.assertEqual(set(self.b.state['photo_recent']), {'one.jpg', 'three.jpg'})
+
     def test_manual_override_survives_idle_and_restart(self):
         self.step(120); self.current = 'MANUAL'; self.step(151)
         self.step(400); self.assertEqual(self.current, 'MANUAL')
@@ -107,7 +122,7 @@ class PhotoTests(unittest.TestCase):
     def test_only_sourced_date_and_place(self):
         self.assertEqual(idle_photos.caption({'date':'2001-01-01','location':'Place'}), '')
         self.assertEqual(idle_photos.caption({'date':'2001-01-01','date_source':'EXIF',
-                                             'location':'Place','location_source':'Reviewed'}), 'January 1, 2001  ·  Place')
+                                             'location':'Place','location_source':'Reviewed'}, today=__import__('datetime').date(2001,2,1)), 'January 1, 2001  ·  Place')
         self.assertEqual(idle_photos.caption({'date':'bad','date_source':'EXIF'}), '')
 
     def test_photo_render(self):

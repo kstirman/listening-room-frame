@@ -56,9 +56,11 @@ class LabTests(unittest.TestCase):
   config=dict(photo_stream_dir=str(source),photo_analysis_file=str(source/'analysis.sqlite3'),photo_exclusions_file=str(source/'excluded.json'))
   paths=[source/n for n in ['index.sqlite3','photo-themes.sqlite3','analysis.sqlite3','excluded.json']];before={p:p.read_bytes() for p in paths}
   with tempfile.TemporaryDirectory() as other:
-   result=export(config,Path(other),seed=4,recipe_count=1,per_recipe=8)
+   extra=dict(self.data['recipes']['dogs'],id='review-only',title='Review candidate')
+   result=export(config,Path(other),seed=4,recipe_count=48,per_recipe=8,extra_recipes=[extra])
    raw=(Path(other)/'snapshot.json').read_text();snap=json.loads(raw)
-   self.assertLessEqual(result['photos'],8);self.assertNotIn(excluded,snap['photos']);self.assertNotIn('private-secret',raw);self.assertNotIn('url',raw)
+   self.assertIn('review-only',snap['recipes']);self.assertEqual(len(snap['members']['review-only']),8)
+   self.assertLessEqual(result['photos'],12);self.assertNotIn(excluded,snap['photos']);self.assertNotIn('private-secret',raw);self.assertNotIn('url',raw)
   self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
  def test_idle_connections_and_rendering_do_not_block_other_requests(self):
   server=make_server(self.root,0);port=server.server_port
@@ -84,6 +86,14 @@ class LabTests(unittest.TestCase):
     release.set();worker.join(3);self.assertEqual(result[0][0],200)
   finally:
    release.set();idle.close();server.shutdown();server.server_close();runner.join(2)
+ def test_exploration_connections_use_specific_evidence(self):
+  recipes={r['id']:r for r in json.loads(Path(__file__).with_name('photo-lab-connections.json').read_text())}
+  self.assertTrue(evidence(recipes['explore-sleep'],[['activity','puppies sleeping']]))
+  self.assertFalse(evidence(recipes['explore-sleep'],[['activity','holding a napkin']]))
+  self.assertTrue(evidence(recipes['explore-shoulders'],[['interaction','carrying a child on shoulders']]))
+  self.assertFalse(evidence(recipes['explore-shoulders'],[['interaction','standing shoulder to shoulder']]))
+  self.assertTrue(evidence(recipes['explore-photographers'],[['activity','taking a picture']]))
+  self.assertFalse(evidence(recipes['explore-photographers'],[['activity','posing for a photograph']]))
  def test_unknown_recipe_rejected(self):
   with self.assertRaises(ValueError):self.lab.create_case('invented',1)
 

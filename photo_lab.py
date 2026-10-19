@@ -1,6 +1,7 @@
 """Private offline collage review. No TV writes or production display counters."""
 import argparse
 from contextlib import closing, contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
@@ -46,7 +47,7 @@ def choose_random(rows, features, years, rng):
     return None
 
 
-def export(config, output, seed=1, recipe_count=3, per_recipe=12):
+def export(config, output, seed=1, recipe_count=3, per_recipe=12, extra_recipes=None):
     """Bounded private cohort; source databases opened read-only. No source metadata writes."""
     output=Path(output).resolve();source=Path(config['photo_stream_dir']).resolve()
     if output==source or source in output.parents:raise ValueError('Use a separate review directory')
@@ -69,6 +70,9 @@ def export(config, output, seed=1, recipe_count=3, per_recipe=12):
         tags={}
         for key,category,value in db.execute('SELECT content_key,category,value FROM photo_tags'):
             if key in rows:tags.setdefault(key,[]).append([category,value])
+    for recipe in extra_recipes or []:
+        ident=recipe['id'];recipes[ident]=recipe
+        members[ident]=[k for k in rows if evidence(recipe,tags.get(k,[]))]
     rng=random.Random(seed);ids=sorted(recipes);rng.shuffle(ids)
     selected=[];cohorts={}
     for ident in ids:
@@ -83,26 +87,39 @@ def export(config, output, seed=1, recipe_count=3, per_recipe=12):
         if len(selected)>=recipe_count:break
     photos={};total=0;failures=0
     from import_photos import get
-    for key in sorted({k for group in cohorts.values() for k in group}):
+    def preview(key):
         row=rows[key]
-        if not Exclusions(config).allows(row):continue
-        cached=source/'images'/(row['key']+'.jpg')
+        if not Exclusions(config).allows(row):return None
+        cached=source/'images'/(row['key']+'.jpg');resumed=output/'images'/(key+'.jpg')
         try:
-            if cached.is_file():blob=cached.read_bytes()
+            if resumed.is_file():blob=resumed.read_bytes()
+            elif cached.is_file():blob=cached.read_bytes()
             else:blob=get(row['url']+'=w1600-h1200',12_000_000,{'lh3.googleusercontent.com'})
             with Image.open(io.BytesIO(blob)) as original:
                 picture=ImageOps.exif_transpose(original).convert('RGB');picture.thumbnail((1600,1200),Image.Resampling.LANCZOS)
-                stream=io.BytesIO();picture.save(stream,format='JPEG',quality=87);blob=stream.getvalue()
-            if total+len(blob)>64*1024*1024:break
-            if not Exclusions(config).allows(row):continue
-            target=output/'images'/(key+'.jpg');target.write_bytes(blob);target.chmod(0o600);total+=len(blob)
-            photos[key]=dict(content_key=key,media_key=row['key'],date=row.get('date',''),file='images/'+key+'.jpg',tags=tags.get(key,[]))
-        except Exception:failures+=1
+                stream=io.BytesIO();picture.save(stream,format='JPEG',quality=87)
+            return stream.getvalue()
+        except Exception:return None
+    keys=sorted({k for group in cohorts.values() for k in group})
+    # Bounded batches avoid retaining the whole image collection in memory.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for start in range(0,len(keys),4):
+            batch=keys[start:start+4]
+            for key,blob in zip(batch,pool.map(preview,batch)):
+                if blob is None:failures+=1;continue
+                row=rows[key]
+                if total+len(blob)>128*1024*1024 or not Exclusions(config).allows(row):continue
+                target=output/'images'/(key+'.jpg');target.write_bytes(blob);target.chmod(0o600);total+=len(blob)
+                photos[key]=dict(content_key=key,media_key=row['key'],date=row.get('date',''),file='images/'+key+'.jpg',tags=tags.get(key,[]))
     # Final exclusion check also removes identities blocked during acquisition.
     final=Exclusions(config)
     for key in list(photos):
         if not final.allows(dict(content_key=key,key=photos[key]['media_key'])):
             (output/photos.pop(key)['file']).unlink(missing_ok=True)
+    selected=[k for k in selected if choose_random([photos[p] for p in cohorts[k] if p in photos],features,recipes[k].get('min_years',1),random.Random(seed))]
+    editorial_order={r['id']:i for i,r in enumerate(extra_recipes or [])}
+    selected.sort(key=lambda k:(k not in editorial_order,editorial_order.get(k,0),recipes[k]['title']))
+    cohorts={k:cohorts[k] for k in selected}
     snapshot=dict(schema=1,created=time.time(),seed=seed,source_hashes={n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in ['photo_themes.py','layouts.py','photo-recipes.json']},recipes={k:recipes[k] for k in selected},photos=photos,members={k:[p for p in v if p in photos] for k,v in cohorts.items()},features={k:features[k] for k in photos},exposures={k:exposure.get(k,[0,0]) for k in photos},pairs=[p for p in pairs if p[0] in photos and p[1] in photos],failures=failures)
     save_json(output/'snapshot.json',snapshot)
     return dict(photos=len(photos),recipes=len(selected),bytes=total,failures=failures)
@@ -180,7 +197,7 @@ class Lab:
     def status(self):
         with self.connect() as db:
             saved=[dict(case=json.loads(c),review=json.loads(r) if r else None) for c,r in db.execute('SELECT c.payload,r.payload FROM cases c LEFT JOIN reviews r ON r.case_id=c.id ORDER BY c.rowid DESC LIMIT 100')]
-        return dict(snapshot=self.fingerprint,created=self.snapshot['created'],photos=len(self.snapshot['photos']),recipes=[dict(id=k,title=v['title'],count=len(self.snapshot['members'][k])) for k,v in self.snapshot['recipes'].items()],saved=saved)
+        return dict(snapshot=self.fingerprint,created=self.snapshot['created'],photos=len(self.snapshot['photos']),recipes=[dict(id=k,title=v['title'],count=len(self.snapshot['members'][k]),explanation=v['explanation']) for k,v in self.snapshot['recipes'].items()],saved=saved)
 
 
 def make_server(root,port=8767):
@@ -241,10 +258,10 @@ def serve(root,port=8767):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='command',required=True)
-    p=sub.add_parser('export');p.add_argument('--config',required=True);p.add_argument('--output',required=True);p.add_argument('--seed',type=int,default=1);p.add_argument('--recipes',type=int,choices=range(1,5),default=3)
+    p=sub.add_parser('export');p.add_argument('--config',required=True);p.add_argument('--output',required=True);p.add_argument('--seed',type=int,default=1);p.add_argument('--recipes',type=int,choices=range(1,49),default=3);p.add_argument('--per-recipe',type=int,choices=range(6,25),default=12);p.add_argument('--connections')
     p=sub.add_parser('serve');p.add_argument('--root',required=True);p.add_argument('--port',type=int,default=8767)
     args=parser.parse_args()
-    if args.command=='export':print(json.dumps(export(json.loads(Path(args.config).read_text()),args.output,args.seed,args.recipes)))
+    if args.command=='export':print(json.dumps(export(json.loads(Path(args.config).read_text()),args.output,args.seed,args.recipes,args.per_recipe,json.loads(Path(args.connections).read_text()) if args.connections else None)))
     else:serve(args.root,args.port)
 
 if __name__=='__main__':main()

@@ -1,0 +1,115 @@
+[
+  {
+    "id": "explore-shoulders",
+    "title": "The upstairs seats",
+    "explanation": "A better view, courtesy of someone else\u2019s shoulders.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "interaction"
+        ],
+        "pattern": "(?:carrying|sitting|seated|riding|child).*on (?:\\w+\\s+){0,2}shoulders|shoulder carrying"
+      }
+    ]
+  },
+  {
+    "id": "explore-oversized",
+    "title": "One size fits absolutely nobody",
+    "explanation": "Hats, glasses and mustaches with ambitions bigger than their wearers.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "activity",
+          "interaction"
+        ],
+        "pattern": "oversized.*(?:hat|eyewear|glasses|mustache|bow\\b)|(?:hat|glasses).*too big"
+      }
+    ]
+  },
+  {
+    "id": "explore-dogtable",
+    "title": "The uninvited dinner guest",
+    "explanation": "Dogs at the table or keeping a close eye on the meal.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "interaction"
+        ],
+        "pattern": "dog.*(?:table|diner|meal|food)|(?:table|diner|meal|food).*dog"
+      }
+    ]
+  },
+  {
+    "id": "explore-photographers",
+    "title": "Caught in the act of keeping memories",
+    "explanation": "The camera turns toward someone taking a picture.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "interaction"
+        ],
+        "pattern": "taking (?:a |another )?(?:photo|picture)|photographing|holding (?:a |the )?camera"
+      }
+    ]
+  },
+  {
+    "id": "explore-peek",
+    "title": "You can\u2019t see me. Probably.",
+    "explanation": "Faces peeking around, over and between things.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "gesture",
+          "activity"
+        ],
+        "pattern": "(?:face|eyes|head|child|baby|dog|animal).*peek|\\bpeeking (?:around|over|through|between|from)"
+      }
+    ]
+  },
+  {
+    "id": "explore-sleep",
+    "title": "The party can carry on without me",
+    "explanation": "Sleepy moments across different years.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "\\bsleeping\\b|\\bnapping\\b"
+      }
+    ]
+  },
+  {
+    "id": "explore-candles",
+    "title": "A very small fire, a very big occasion",
+    "explanation": "Faces gathered close to candlelit cakes.",
+    "family": "exploration",
+    "min_years": 2,
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "interaction"
+        ],
+        "pattern": "(?:leaning|gathering|blowing|watching).*(?:cake candle|lit candle|birthday candle|candlelit cake|candles)"
+      }
+    ]
+  }
+]

@@ -560,22 +560,25 @@ python photo_lab.py export --config /private/path/config.json --output /private/
 python photo_lab.py serve --root /private/path/review-sample --port 8767
 ```
 
-Open `http://127.0.0.1:8767`. Export uses read-only source databases, at most four recipe
-pools of twelve photos and a 64 MiB preview budget. It rechecks exclusions during export,
+Open `http://127.0.0.1:8767`. Export uses read-only source databases, up to 48 recipe
+pools with 6–24 photos each and a 128 MiB preview budget. It rechecks exclusions during export,
 strips source URLs, downloads only missing bounded previews, and does not write photo
 metadata, exposures or TV state. Keep the sample and reviews private. A copied sample can
 be reviewed offline on another computer with Pillow and requests installed.
 
-The page makes blind A/B comparisons of the production assembly rule against a seeded
+The page makes A/B comparisons with anonymous method labels of the production assembly rule against a seeded
 eligible random sample, using the same recipe pool, layout and diversity constraints.
 The production rule is invoked in an isolated context with the requested recipe forced
 and timing/cooldown gates bypassed; this tests grouping, not end-to-end rotation behavior.
 The default first sample covers three recipes, not the whole catalog. Generate another
 fresh sample with a different seed to explore other recipes or refresh changed exclusions.
 
-Reveal the caption and per-photo matching tags after judging the images. Save A/B/both/
+Browse the visible captions or hide a caption for blind review. Inspect per-photo matching tags. Save A/B/both/
 neither/unsure, mark individual weak matches and add comments. Cases, seed, exact photo
 identities and reviews persist in a separate `reviews.sqlite3`; saved comparisons reopen
 unchanged. Review flags are editorial notes, not permanent Frame exclusions. New
 comparisons never count as displays and never promote an algorithm to production.
 The server binds to loopback only, checks Host/Origin and requires a per-run token for writes.
+
+
+The private review lab also supports browsing named connection candidates. **Next connection** cycles across different ideas; **Reshuffle this connection** keeps the idea and changes its sample. The caption is visible by default and can be hidden for blind review. To include experimental connections without changing the Frame rules, export with `--connections photo-lab-connections.json --recipes 48 --per-recipe 8`. The exporter derives candidate membership from existing tags, enforces current exclusions and diversity, and caps preview images at 128 MiB. Unsupported ideas are skipped; model matches still need visual review. Use a fresh output folder; older review folders remain intact.

@@ -1,0 +1,64 @@
+import hashlib,json,sqlite3,tempfile,unittest
+from pathlib import Path
+from PIL import Image
+from photo_lab import Lab,evidence,choose_random,export
+
+class LabTests(unittest.TestCase):
+ def setUp(self):
+  self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);(self.root/'images').mkdir()
+  photos={};features={}
+  for i in range(12):
+   k=f'{i+1:064x}';photos[k]=dict(content_key=k,media_key=k,date=f'{2010+i%6}-03-{i+1:02}',file='images/'+k+'.jpg',tags=[['activity','holding a dog']]);features[k]=['photograph',hashlib.sha256(k.encode()).hexdigest()[:16]]
+   Image.new('RGB',(80,60),(i*20,80,120)).save(self.root/photos[k]['file'])
+  self.data=dict(schema=1,created=1792423000,seed=1,recipes={'dogs':dict(id='dogs',title='Dogs held',family='care',explanation='Held dogs across years.',min_years=3,clauses=[dict(categories=['activity'],pattern='holding a dog')])},photos=photos,members={'dogs':list(photos)},features=features,exposures={k:[0,0] for k in photos},pairs=[])
+  (self.root/'snapshot.json').write_text(json.dumps(self.data));self.lab=Lab(self.root)
+ def tearDown(self):self.temp.cleanup()
+ def test_reproducible_comparison_and_durable_reviews(self):
+  a=self.lab.create_case('dogs',22);b=self.lab.create_case('dogs',22)
+  self.assertEqual(a,b)
+  for v in a['variants']:self.assertEqual([p['date'] for p in v['photos']],sorted(p['date'] for p in v['photos']))
+  keys=[p['key'] for p in a['variants'][0]['photos']]
+  self.lab.review(dict(case_id=a['id'],winner='neither',rejected=keys[:1],notes='Wrong match'))
+  reload=Lab(self.root);saved=reload.status()['saved'][0];self.assertEqual(saved['review']['rejected'],keys[:1]);self.assertEqual(saved['case'],a)
+ def test_no_source_snapshot_mutation_or_display_counts(self):
+  before=(self.root/'snapshot.json').read_bytes();self.lab.create_case('dogs',1)
+  self.assertEqual((self.root/'snapshot.json').read_bytes(),before)
+  with sqlite3.connect(self.root/'planner/photo-themes.sqlite3') as db:
+   self.assertEqual(db.execute('select count(*) from displays').fetchone()[0],0)
+   self.assertEqual(db.execute('select count(*) from exposures').fetchone()[0],0)
+ def test_missing_photos_cannot_be_selected(self):
+  key=next(iter(self.data['photos']));(self.root/self.data['photos'][key]['file']).unlink()
+  case=self.lab.create_case('dogs',3);self.assertFalse(any(p['key']==key for v in case['variants'] for p in v['photos']))
+ def test_unknown_photo_review_rejected(self):
+  case=self.lab.create_case('dogs',1)
+  with self.assertRaises(ValueError):self.lab.review(dict(case_id=case['id'],winner='A',rejected=['bad']))
+ def test_evidence_does_not_match_unrelated_category(self):
+  r=self.data['recipes']['dogs'];self.assertEqual(evidence(r,[['color','holding a dog']]),[])
+ def test_insufficient_diversity_is_explicit(self):
+  for photo in self.lab.snapshot['photos'].values():photo['date']='2024-01-01'
+  with self.assertRaises(ValueError):self.lab.create_case('dogs',1)
+ def test_refuses_export_into_live_directory(self):
+  with self.assertRaises(ValueError):export(dict(photo_stream_dir=str(self.root)),self.root)
+ def test_export_is_bounded_private_and_read_only(self):
+  source=self.root;keys=list(self.data['photos']);excluded=keys[0]
+  with sqlite3.connect(source/'index.sqlite3') as db:
+   db.execute('CREATE TABLE photos(key TEXT,content_key TEXT,url TEXT,date TEXT,active INTEGER,video INTEGER)')
+   db.executemany('INSERT INTO photos VALUES(?,?,?,?,1,0)',[(k,k,'https://lh3.googleusercontent.com/private-secret',p['date']) for k,p in self.data['photos'].items()])
+  with sqlite3.connect(source/'photo-themes.sqlite3') as db:
+   db.executescript('CREATE TABLE recipes(id,payload);CREATE TABLE members(recipe,key);CREATE TABLE features(key,kind,dhash);CREATE TABLE exposures(key,count,last);CREATE TABLE pairs(a,b,count);')
+   db.execute('INSERT INTO recipes VALUES(?,?)',('dogs',json.dumps(self.data['recipes']['dogs'])))
+   db.executemany('INSERT INTO members VALUES(?,?)',[('dogs',k) for k in keys]);db.executemany('INSERT INTO features VALUES(?,?,?)',[(k,*v) for k,v in self.data['features'].items()])
+  with sqlite3.connect(source/'analysis.sqlite3') as db:
+   db.execute('CREATE TABLE photo_tags(content_key,category,value)');db.executemany('INSERT INTO photo_tags VALUES(?,?,?)',[(k,'activity','holding a dog') for k in keys])
+  (source/'excluded.json').write_text(json.dumps(dict(schema=1,content_keys=[excluded],media_keys=[])))
+  config=dict(photo_stream_dir=str(source),photo_analysis_file=str(source/'analysis.sqlite3'),photo_exclusions_file=str(source/'excluded.json'))
+  paths=[source/n for n in ['index.sqlite3','photo-themes.sqlite3','analysis.sqlite3','excluded.json']];before={p:p.read_bytes() for p in paths}
+  with tempfile.TemporaryDirectory() as other:
+   result=export(config,Path(other),seed=4,recipe_count=1,per_recipe=8)
+   raw=(Path(other)/'snapshot.json').read_text();snap=json.loads(raw)
+   self.assertLessEqual(result['photos'],8);self.assertNotIn(excluded,snap['photos']);self.assertNotIn('private-secret',raw);self.assertNotIn('url',raw)
+  self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+ def test_unknown_recipe_rejected(self):
+  with self.assertRaises(ValueError):self.lab.create_case('invented',1)
+
+if __name__=='__main__':unittest.main()

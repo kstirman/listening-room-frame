@@ -74,7 +74,7 @@ def normalize(metadata):
  for person in credits.split(' - '):
   name,sep,roles=person.partition(', ')
   if not sep:continue
-  for role,key in [('Composer','composer'),('Conductor','conductor'),('Director','conductor'),('Orchestra','orchestra'),('Soloist','soloist')]:
+  for role,key in [('Composer','composer'),('Conductor','conductor'),('Director','conductor'),('Orchestra','orchestra'),('Ensemble','orchestra'),('Soloist','soloist'),('MainArtist','performer'),('AssociatedPerformer','performer')]:
    if role in [r.strip() for r in roles.split(',')]:
     old=m.get(key,'');m[key]=old+'; '+name if old and name not in old.split('; ') else (old or name)
  title=m.get('title','')
@@ -94,7 +94,10 @@ def normalize(metadata):
  movement=m.get('movementName') or m.get('movement','')
  number=m.get('movementNumber','')
  if number and movement and not re.match(r'^(?:[IVXLCDM]+|\d+)\.',movement):movement=f'{number}. {movement}'
- return {k:v for k,v in {'composer':m.get('composer',''),'work':work,'movement':movement,'conductor':m.get('conductor',''),'orchestra':m.get('orchestra') or m.get('ensemble') or m.get('choir',''),'soloist':m.get('soloist','')}.items() if v}
+ # Keep explicitly credited performers without guessing instruments or roles.
+ known={name for field in ('composer','conductor','orchestra','ensemble','choir','soloist') for name in m.get(field,'').split('; ') if name}
+ performers='; '.join(dict.fromkeys(name for name in m.get('performer','').split('; ') if name and name not in known))
+ return {k:v for k,v in {'composer':m.get('composer',''),'work':work,'movement':movement,'conductor':m.get('conductor',''),'orchestra':m.get('orchestra') or m.get('ensemble') or m.get('choir',''),'soloist':m.get('soloist',''),'performer':performers}.items() if v}
 
 def file_tags(resource,root,resource_prefix="/minimserver/*/AudirvanaLibrary/"):
  path=urlparse(resource).path;marker=resource_prefix

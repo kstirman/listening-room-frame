@@ -11,6 +11,8 @@ import classical
 import timing
 from reviewed_catalog import select
 
+MAX_CANDIDATES = 12
+
 
 def canonical(value):
     return ' '.join(unicodedata.normalize('NFKC', str(value or '')).casefold().split())
@@ -98,7 +100,7 @@ class Resolver:
 
     def discover(self, album, artist):
         ids = candidates(self.get('search', {'q': album, 'i': 'boutique'}), album)
-        if len(ids) > 4:
+        if len(ids) > MAX_CANDIDATES:
             return [], 'ambiguous'
         albums = []
         for album_id in ids:

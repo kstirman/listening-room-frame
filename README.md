@@ -312,7 +312,7 @@ public album catalog. Only the album title is sent in the search query; album an
 artist must match (ignoring case/spacing), then one unique track title and duration
 within one second must identify an edition. Multiple matching editions, incomplete
 work sequences and lookup failures retain the fallback display. Search is limited
-to four exact-title candidates, one job at a time, with bounded network timeouts.
+to twelve exact-title candidates, one job at a time, with bounded network timeouts.
 Successful album catalogs are cached for 30 minutes across tracks; unsuccessful
 lookups retry after five minutes. Pending results are checked every ten seconds.
 No credentials or audio are sent, and no playback controls are used.

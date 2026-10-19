@@ -104,7 +104,7 @@ def classical(cover_path, details, output):
     y=max(y+40,1410)
     if details.get('conductor'):block('Conductor · '+details['conductor'],50,(200,197,190),2)
     block(details.get('orchestra',''),50,(200,197,190),2)
-    block(details.get('soloist',''),50,(200,197,190),2)
+    block('; '.join(filter(None,(details.get('soloist',''),details.get('performer','')))),50,(200,197,190),2)
     if dates.display_line(details):
         y=min(y,2040)
         block(dates.display_line(details),42,(175,172,166),1)

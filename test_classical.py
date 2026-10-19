@@ -48,6 +48,13 @@ class ClassicalTests(unittest.TestCase):
  def test_missing_roles_not_guessed(self):
   d=normalize({'genre':'Classical','title':'Adagio','artist':'Brahms'})
   self.assertNotIn('composer',d);self.assertNotIn('conductor',d)
+ def test_explicit_performers_preserved_without_role_guessing_or_duplicates(self):
+  d=normalize({'genre':'Classical','title':'I. Allegro','credits':'A, Composer, MainArtist - B, Orchestra, MainArtist - C, MainArtist, AssociatedPerformer - D, Soloist, MainArtist - E, Ensemble'})
+  self.assertEqual(d['performer'],'C')
+  self.assertEqual(d['orchestra'],'B; E')
+  self.assertEqual(d['soloist'],'D')
+  self.assertNotIn('conductor',d)
+  self.assertEqual(normalize({'genre':'Classical','title':'Piece','performer':'Named Performer'})['performer'],'Named Performer')
  def test_track_changes_same_album_refresh_card(self):
   with tempfile.TemporaryDirectory() as root:
    b=Bridge({'idle_seconds':120},root)

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 from bridge import Bridge
 from classical import normalize
-from auto_catalog import Resolver, candidates, album_rows
+from auto_catalog import Resolver, candidates, album_rows, MAX_CANDIDATES
 
 
 def ld(data):
@@ -67,12 +67,22 @@ class AutomaticCatalogTests(unittest.TestCase):
 
     def test_failure_negative_cache_and_candidate_limit(self):
         for get,status in [(Mock(side_effect=RuntimeError()),'unavailable'),
-                           (Mock(return_value=search(('a','b','c','d','e'))),'ambiguous')]:
+                           (Mock(return_value=search(tuple(str(i) for i in range(MAX_CANDIDATES+1)))),'ambiguous')]:
             r=Resolver(get);r.lookup(META);self.wait(r)
             self.assertEqual(r.lookup(META)[1],status);r.lookup(META)
             self.assertEqual(get.call_count,1)
         self.assertEqual(candidates(search().replace('www.qobuz.com','evil.test'),'Example Cycle'),[])
         self.assertIsNone(album_rows(page(),'Different','Example Choir'))
+
+    def test_many_same_title_releases_still_require_unique_track_match(self):
+        wrong=page().replace('00:03:00','00:04:00')
+        for valid,status in [(1,'matched'),(2,'ambiguous')]:
+            get=Mock(side_effect=[search(tuple(str(i) for i in range(6)))]+[wrong]*(6-valid)+[page()]*valid)
+            resolver=Resolver(get);resolver.lookup(META);self.wait(resolver)
+            match,actual=resolver.lookup(META)
+            self.assertEqual(actual,status)
+            self.assertEqual(get.call_count,7)
+            if valid==1:self.assertEqual(match[1]['durations'],[120,180])
 
     def test_fallback_known_part_without_invented_total(self):
         d=normalize(META)

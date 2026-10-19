@@ -311,7 +311,7 @@ def photo_montage(photos, recipe, output, layout='gallery'):
         if not k:return [()] if n==0 else []
         return [(a,)+tail for a in range(2,min(10,n)+1) if 2*(k-1)<=n-a<=10*(k-1) for tail in partitions(n-a,k-1)]
     best=None
-    for nr in ([4,5] if count>16 else [3] if layout=='pairs' and count>=6 else [2,3] if count>=6 else [1]):
+    for nr in ([4,5] if count>16 else [2,3] if count>=6 else [1]):
         for sizes in partitions(count,nr):
             pos=0;heights=[]
             for size in sizes:

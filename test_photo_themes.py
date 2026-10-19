@@ -88,6 +88,12 @@ class ThemeTests(unittest.TestCase):
   for kind,count in [('gallery',6),('pairs',6),('timeline',6),('mosaic',28)]:
    target=self.root/(kind+'.jpg');layouts.photo_montage(photos[:count],dict(title='Synthetic connection',explanation='A factual explanation.'),target,kind)
    with Image.open(target) as image:self.assertEqual(image.size,(3840,2160))
+ def test_six_landscapes_use_screen_width_in_pair_layout(self):
+  target=self.root/'pairs.jpg'
+  layouts.photo_montage([self.photo(i) for i in range(6)],dict(title='Shared color',explanation='Synthetic photos.'),target,'pairs')
+  with Image.open(target) as image:
+   thumb=image.resize((320,180));blue=sum(b>60 and r<40 and g<40 for r,g,b in thumb.getdata())
+  self.assertGreater(blue,320*180*.52)
  def test_production_confirmed_selection_boundary(self):
   # The receipt must never run when TV selection fails.
   b=Bridge(dict(idle_photos_enabled=True,photo_themes_enabled=True),self.root/'bridge')

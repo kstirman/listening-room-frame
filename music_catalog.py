@@ -20,6 +20,7 @@ from urllib.parse import quote
 import local_composition
 import local_match
 import timing
+import classical
 
 LOG = logging.getLogger(__name__)
 SCHEMA = '''
@@ -99,7 +100,9 @@ class Store:
                 for track_id, fields in rows.items():
                     fields.setdefault('_catalog_track_id', track_id)
                     fields.setdefault('_provenance', 'saved public catalog')
-            return albums, not 0 <= time.time()-row[0] < 7*86400
+            # Keep original source fields on disk; apply current grouping rules
+            # when reading saved editions so fixes do not require a refetch.
+            return [classical.catalog(rows) for rows in albums], not 0 <= time.time()-row[0] < 7*86400
         except (OSError, sqlite3.Error, ValueError, TypeError):
             return None
 
@@ -122,7 +125,7 @@ class Store:
         try:
             with self.connect() as db:
                 row = db.execute('SELECT payload FROM editions WHERE id=?',(album_id,)).fetchone()
-            return json.loads(row[0]) if row else None
+            return classical.catalog(json.loads(row[0])) if row else None
         except (OSError, sqlite3.Error, ValueError):
             return None
 

@@ -143,7 +143,7 @@ def catalog(tracks):
   if sep and composer and head.casefold() in {composer.casefold(),composer.split()[-1].casefold()}:
    title=rest
   work,sep,section=title.partition(': ')
-  act=re.fullmatch(r'(.+?)(?: / |, )(Act [IVX0-9]+)',work)
+  act=re.fullmatch(r'(.+?)(?: / |, )((?:Act|Scene) [IVX0-9]+)',work)
   if act:
    work=act[1];section=act[2]+': '+section
   return work,sep,section

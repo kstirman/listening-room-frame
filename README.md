@@ -313,8 +313,13 @@ artist must match (ignoring case/spacing), then one unique track title and durat
 within one second must identify an edition. Multiple matching editions, incomplete
 work sequences and lookup failures retain the fallback display. Search is limited
 to twelve exact-title candidates, one job at a time, with bounded network timeouts.
-Successful album catalogs are cached for 30 minutes across tracks; unsuccessful
-lookups retry after five minutes. Pending results are checked every ten seconds.
+Successful album catalogs are cached in memory for 30 minutes and privately in
+`catalog-cache.sqlite3` for seven days, so service restarts and repeat albums can
+reuse them immediately. The disk cache retains at most 256 albums; exact artist,
+track, duration, and ambiguity checks still run on every lookup. Failed searches
+are not persisted and retry after five minutes. Pending cards say “Looking up
+work and credits…”; completed lookups invalidate the detail cache on the next
+playback poll, without waiting for the ten-second retry bucket.
 No credentials or audio are sent, and no playback controls are used.
 
 Set `auto_catalog` to false to disable online discovery. Other UPnP sources can

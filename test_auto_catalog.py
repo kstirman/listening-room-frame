@@ -1,11 +1,14 @@
 import json
+from pathlib import Path
+import sqlite3
+import threading
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from bridge import Bridge
 from classical import normalize
-from auto_catalog import Resolver, candidates, album_rows, MAX_CANDIDATES
+from auto_catalog import Resolver, candidates, album_rows, MAX_CANDIDATES, CACHE_AGE
 
 
 def ld(data):
@@ -39,6 +42,58 @@ class AutomaticCatalogTests(unittest.TestCase):
         self.assertEqual(status,'matched');self.assertEqual(match[1]['index'],1)
         match,status=r.lookup(dict(META,title='Cycle: No. 1, Part',duration_seconds=120))
         self.assertEqual(match[1]['index'],0);self.assertEqual(get.call_count,2)
+
+    def test_persistent_catalog_survives_restart_and_still_checks_recording(self):
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'catalog-cache.sqlite3'
+            first=Resolver(Mock(side_effect=[search(),page()]),cache_path=path)
+            first.lookup(META);self.wait(first)
+            offline=Mock(side_effect=AssertionError('Saved album must not need network'))
+            restarted=Resolver(offline,cache_path=path)
+            self.assertEqual(restarted.lookup(META)[1],'matched')
+            self.assertEqual(restarted.lookup(dict(META,duration_seconds=900))[1],'track_mismatch')
+            self.assertEqual(restarted.lookup(dict(META,title='Cycle: No. 1, Part',duration_seconds=120))[0][1]['index'],0)
+            offline.assert_not_called()
+            self.assertEqual(path.stat().st_mode & 0o777,0o600)
+
+    def test_persisted_ambiguity_is_not_promoted_to_unique_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/'catalog-cache.sqlite3'
+            first=Resolver(Mock(side_effect=[search(('a','b')),page(),page()]),cache_path=path)
+            first.lookup(META);self.wait(first)
+            self.assertEqual(Resolver(Mock(),cache_path=path).lookup(META)[1],'ambiguous')
+
+    def test_expired_corrupt_and_failed_cache_do_not_block_fresh_discovery(self):
+        for scenario in ('expired','corrupt','failure'):
+            with self.subTest(scenario=scenario),tempfile.TemporaryDirectory() as root:
+                path=Path(root)/'catalog-cache.sqlite3'
+                first=Resolver(Mock(side_effect=[search(),page()]),cache_path=path)
+                first.lookup(META);self.wait(first)
+                if scenario=='expired':
+                    with sqlite3.connect(path) as db:db.execute('UPDATE catalogs SET saved_at=?',(time.time()-CACHE_AGE-1,))
+                elif scenario=='corrupt':path.write_text('invalid sqlite')
+                else:
+                    path.unlink()
+                    failed=Resolver(Mock(side_effect=RuntimeError()),cache_path=path)
+                    failed.lookup(META);self.wait(failed)
+                    self.assertFalse(path.exists())
+                fresh=Resolver(Mock(side_effect=[search(),page()]),cache_path=path)
+                self.assertEqual(fresh.lookup(META)[1],'searching');self.wait(fresh)
+                self.assertEqual(fresh.lookup(META)[1],'matched')
+
+    def test_catalog_completion_refreshes_details_within_same_retry_bucket(self):
+        with tempfile.TemporaryDirectory() as root:
+            gate=threading.Event()
+            def get(path, params=None):
+                self.assertTrue(gate.wait(2))
+                return search() if path=='search' else page()
+            b=Bridge({},root);b.auto_catalog=Resolver(get)
+            with patch('bridge.time.monotonic',return_value=100):
+                self.assertEqual(b.details(META)['catalog_status'],'searching')
+            gate.set()
+            self.wait(b.auto_catalog)
+            with patch('bridge.time.monotonic',return_value=100):
+                self.assertEqual(b.details(META)['catalog_status'],'matched')
 
     def test_artist_and_editions_checked(self):
         for pages,status in [([page('Other')],'unmatched'),([page(),page()],'ambiguous')]:

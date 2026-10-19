@@ -1,7 +1,10 @@
 """Bounded background catalog discovery; no credentials or playback control."""
 import json
+from contextlib import closing
 from html.parser import HTMLParser
+from pathlib import Path
 import re
+import sqlite3
 import threading
 import time
 import unicodedata
@@ -12,6 +15,47 @@ import timing
 from reviewed_catalog import select
 
 MAX_CANDIDATES = 12
+CACHE_VERSION = 1
+CACHE_AGE = 7 * 86400
+
+
+class CatalogCache:
+    """Private parsed metadata only; failed lookups never replace saved catalogs."""
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def load(self, key):
+        if not self.path.is_file():
+            return None
+        try:
+            with closing(sqlite3.connect(self.path, timeout=1)) as db:
+                row = db.execute('SELECT saved_at, payload FROM catalogs WHERE album=? AND artist=? AND version=?', (*key, CACHE_VERSION)).fetchone()
+            if not row or not 0 <= time.time() - row[0] < CACHE_AGE or len(row[1]) > 2_000_000:
+                return None
+            albums = json.loads(row[1])
+            if not isinstance(albums, list) or not 1 <= len(albums) <= MAX_CANDIDATES:
+                return None
+            if any(not isinstance(rows, dict) or not rows or len(rows) > 2048 or
+                   any(not isinstance(value, dict) for value in rows.values()) for rows in albums):
+                return None
+            return albums
+        except (OSError, sqlite3.Error, ValueError, TypeError):
+            return None
+
+    def save(self, key, albums):
+        payload = json.dumps(albums)
+        if not albums or len(payload) > 2_000_000:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with closing(sqlite3.connect(self.path, timeout=1)) as db:
+                self.path.chmod(0o600)
+                db.execute('CREATE TABLE IF NOT EXISTS catalogs (album TEXT, artist TEXT, version INTEGER, saved_at REAL, payload TEXT, PRIMARY KEY(album,artist))')
+                db.execute('INSERT OR REPLACE INTO catalogs VALUES(?,?,?,?,?)', (*key, CACHE_VERSION, time.time(), payload))
+                db.execute('DELETE FROM catalogs WHERE rowid NOT IN (SELECT rowid FROM catalogs ORDER BY saved_at DESC LIMIT 256)')
+                db.commit()
+        except (OSError, sqlite3.Error):
+            pass  # A cache failure must not prevent an otherwise verified match.
 
 
 def canonical(value):
@@ -92,9 +136,11 @@ def fetch(path, params=None):
 
 
 class Resolver:
-    def __init__(self, get=fetch):
+    def __init__(self, get=fetch, cache_path=None):
         self.get = get
+        self.disk = CatalogCache(cache_path) if cache_path else None
         self.cache = {}
+        self.revision = 0
         self.lock = threading.Lock()
         self.busy = False
 
@@ -114,10 +160,13 @@ class Resolver:
             albums, status = self.discover(album, artist)
         except Exception:
             albums, status = [], 'unavailable'
+        if self.disk and status == 'ready':
+            self.disk.save(key, albums)
         with self.lock:
             if len(self.cache) >= 32:
                 self.cache.pop(next(iter(self.cache)))
             self.cache[key] = (time.monotonic(), albums, status)
+            self.revision += 1
             self.busy = False
 
     def lookup(self, metadata):
@@ -130,10 +179,18 @@ class Resolver:
             if cached and time.monotonic() - cached[0] < (1800 if cached[2] == 'ready' else 300):
                 _, albums, status = cached
             else:
-                if not self.busy:
+                saved = self.disk.load(key) if self.disk else None
+                if saved:
+                    albums, status = saved, 'ready'
+                    if len(self.cache) >= 32:
+                        self.cache.pop(next(iter(self.cache)))
+                    self.cache[key] = (time.monotonic(), albums, status)
+                elif not self.busy:
                     self.busy = True
                     threading.Thread(target=self._run, args=(key, album, artist), daemon=True).start()
-                return None, 'searching'
+                    return None, 'searching'
+                else:
+                    return None, 'searching'
         if status != 'ready':
             return None, status
         # Reject editions that match the track even if only one has a complete work.

@@ -98,9 +98,11 @@ def classical(cover_path, details, output):
             draw.text((x,y),line,font=f,fill=color,anchor='lt');y+=round(size*1.4)
         y+=35
     block(details.get('composer',''),68,(189,186,179),2)
-    block(details.get('work',''),86,(246,243,236),3)
+    pending = details.get('catalog_status') == 'searching'
+    block((details.get('display_album') or details.get('work','')) if pending else details.get('work',''),86,(246,243,236),3)
+    if pending:block('Looking up work and credits…',42,(175,172,166),1)
     if details.get('composition_year'):block('Composed · '+details['composition_year'],42,(175,172,166),2)
-    block(details.get('movement',''),66,(228,224,217),4)
+    block(details.get('movement') or (details.get('display_track','') if pending else ''),66,(228,224,217),4)
     y=max(y+40,1410)
     if details.get('conductor'):block('Conductor · '+details['conductor'],50,(200,197,190),2)
     block(details.get('orchestra',''),50,(200,197,190),2)

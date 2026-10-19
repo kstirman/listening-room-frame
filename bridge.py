@@ -130,7 +130,7 @@ class Bridge:
         self.detail_cache = {}
         self.local_compositions = local_composition.Catalog()
         self.local_matches = local_match.Index()
-        self.auto_catalog = auto_catalog.Resolver()
+        self.auto_catalog = auto_catalog.Resolver(cache_path=self.root / 'catalog-cache.sqlite3')
         self.photo_stream = Stream(config) if config.get("photo_stream_enabled", False) else None
         self.local_index = {}
         self.index_at = 0
@@ -294,7 +294,7 @@ class Bridge:
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
         if automatic:
-            cache_key += (int(time.monotonic() // 10),)
+            cache_key += (int(time.monotonic() // 10), self.auto_catalog.revision)
         if cache_key in self.detail_cache:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)

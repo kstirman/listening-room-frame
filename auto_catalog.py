@@ -30,7 +30,7 @@ class CatalogCache:
         try:
             with closing(sqlite3.connect(self.path, timeout=1)) as db:
                 row = db.execute('SELECT saved_at, payload FROM catalogs WHERE album=? AND artist=? AND version=?', (*key, CACHE_VERSION)).fetchone()
-            if not row or not 0 <= time.time() - row[0] < CACHE_AGE or len(row[1]) > 2_000_000:
+            if not row or len(row[1]) > 2_000_000:
                 return None
             albums = json.loads(row[1])
             if not isinstance(albums, list) or not 1 <= len(albums) <= MAX_CANDIDATES:
@@ -38,7 +38,7 @@ class CatalogCache:
             if any(not isinstance(rows, dict) or not rows or len(rows) > 2048 or
                    any(not isinstance(value, dict) for value in rows.values()) for rows in albums):
                 return None
-            return albums
+            return albums, not 0 <= time.time() - row[0] < CACHE_AGE
         except (OSError, sqlite3.Error, ValueError, TypeError):
             return None
 
@@ -155,7 +155,7 @@ class Resolver:
                 albums.append(rows)
         return albums, 'ready' if albums else 'unmatched'
 
-    def _run(self, key, album, artist):
+    def _run(self, key, album, artist, keep_ready=False):
         try:
             albums, status = self.discover(album, artist)
         except Exception:
@@ -163,6 +163,9 @@ class Resolver:
         if self.disk and status == 'ready':
             self.disk.save(key, albums)
         with self.lock:
+            if keep_ready and status != 'ready' and key in self.cache and self.cache[key][2] == 'ready':
+                # A transient outage must not discard a usable saved recording.
+                _, albums, status = self.cache[key]
             if len(self.cache) >= 32:
                 self.cache.pop(next(iter(self.cache)))
             self.cache[key] = (time.monotonic(), albums, status)
@@ -181,10 +184,14 @@ class Resolver:
             else:
                 saved = self.disk.load(key) if self.disk else None
                 if saved:
-                    albums, status = saved, 'ready'
+                    albums, stale = saved
+                    status = 'ready'
                     if len(self.cache) >= 32:
                         self.cache.pop(next(iter(self.cache)))
                     self.cache[key] = (time.monotonic(), albums, status)
+                    if stale and not self.busy:
+                        self.busy = True
+                        threading.Thread(target=self._run, args=(key, album, artist, True), daemon=True).start()
                 elif not self.busy:
                     self.busy = True
                     threading.Thread(target=self._run, args=(key, album, artist), daemon=True).start()

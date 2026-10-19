@@ -314,8 +314,10 @@ within one second must identify an edition. Multiple matching editions, incomple
 work sequences and lookup failures retain the fallback display. Search is limited
 to twelve exact-title candidates, one job at a time, with bounded network timeouts.
 Successful album catalogs are cached in memory for 30 minutes and privately in
-`catalog-cache.sqlite3` for seven days, so service restarts and repeat albums can
-reuse them immediately. The disk cache retains at most 256 albums; exact artist,
+`catalog-cache.sqlite3`, so service restarts and repeat albums can reuse them
+immediately. Catalogs older than seven days refresh in the background while
+their saved matches remain usable; a failed refresh preserves the prior catalog.
+The disk cache retains at most 256 albums; exact artist,
 track, duration, and ambiguity checks still run on every lookup. Failed searches
 are not persisted and retry after five minutes. Pending cards say “Looking up
 work and credits…”; completed lookups invalidate the detail cache on the next

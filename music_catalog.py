@@ -21,6 +21,7 @@ import local_composition
 import local_match
 import timing
 import classical
+import dates
 
 LOG = logging.getLogger(__name__)
 SCHEMA = '''
@@ -57,6 +58,10 @@ def available(default=None):
 
 
 class Store:
+    def dated_rows(self, rows):
+        registry=self.document('work_dates',[]) or []
+        return {k:dates.catalog_fields(v,registry) for k,v in classical.catalog(rows).items()}
+
     def __init__(self, path):
         self.path = Path(path)
         self.sync_lock = threading.Lock()
@@ -102,11 +107,12 @@ class Store:
                     fields.setdefault('_provenance', 'saved public catalog')
             # Keep original source fields on disk; apply current grouping rules
             # when reading saved editions so fixes do not require a refetch.
-            return [classical.catalog(rows) for rows in albums], not 0 <= time.time()-row[0] < 7*86400
+            return [self.dated_rows(rows) for rows in albums], not 0 <= time.time()-row[0] < 7*86400
         except (OSError, sqlite3.Error, ValueError, TypeError):
             return None
 
     def save(self, lookup_key, albums):
+        albums=[self.dated_rows(rows) for rows in albums]
         payload = json.dumps(albums)
         if not albums or len(payload) > 2_000_000:
             return
@@ -125,7 +131,7 @@ class Store:
         try:
             with self.connect() as db:
                 row = db.execute('SELECT payload FROM editions WHERE id=?',(album_id,)).fetchone()
-            return classical.catalog(json.loads(row[0])) if row else None
+            return self.dated_rows(json.loads(row[0])) if row else None
         except (OSError, sqlite3.Error, ValueError):
             return None
 
@@ -134,6 +140,7 @@ class Store:
         """Save an explicit edition and add it to, never replace, known alternatives."""
         if not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id) or not rows:
             return
+        rows=self.dated_rows(rows)
         with self.connect() as db:
             db.execute('INSERT OR REPLACE INTO editions VALUES(?,?,?)', (album_id,time.time(),json.dumps(rows)))
         if album and artist:
@@ -180,6 +187,7 @@ class Store:
         overrides = json.loads(overrides_path.read_text()) if overrides_path.exists() else {}
         paths = sorted(p for p in root.rglob('*') if p.suffix.lower() in {'.flac','.wav','.aiff','.aif','.m4a','.mp3','.dsf','.ape','.ogg','.opus','.wv'} and p.is_file())
         result = {'files':len(paths),'saved':0,'probed':0,'errors':0}
+        date_registry=self.document('work_dates',[]) or []
         with self.connect() as db:
             prior = {name:(size,mtime,payload) for name,size,mtime,payload in db.execute(
                 'SELECT path,size,mtime,payload FROM local_tracks WHERE root=?',(str(root),))}
@@ -206,6 +214,7 @@ class Store:
                     fields = tag_fields(tags)
                     fields.update(reviewed.get(name,{}).get('fields',{}))
                     fields.update(overrides.get(name,{}).get('fields',{}))
+                    fields=dates.catalog_fields(fields,date_registry)
                     # Current tags plus reviewed aliases, not unverified old inventory.
                     identities = local_match.identities({}, {}, fields, tags)
                     payload = json.dumps({'tags':tags,'fields':fields,
@@ -258,7 +267,7 @@ class Store:
             stat = target.stat()
             if row[:2] != (stat.st_size,stat.st_mtime_ns):
                 return None
-            fields = json.loads(row[2])['fields']
+            fields = dates.catalog_fields(json.loads(row[2])['fields'],self.document('work_dates',[]) or [])
             context = None
             if fields.get('work') and fields.get('composer'):
                 candidates = {}

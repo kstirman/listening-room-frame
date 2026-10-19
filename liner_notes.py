@@ -17,7 +17,7 @@ def extract(fields):
     if not isinstance(fields, dict):
         return {}
     notes = {k: text(fields.get(k)) for k in (
-        'recordingDate', 'releaseDate', 'originalReleaseDate', 'recordingLocation',
+        'compositionDate', 'composition_source', 'recordingDate', 'releaseDate', 'originalReleaseDate', 'recordingLocation',
         'label', 'songwriters', 'producer', 'engineer', 'note') if text(fields.get(k))}
     personnel = fields.get('personnel', [])
     if isinstance(personnel, list):
@@ -70,6 +70,11 @@ def lookup_data(metadata, data):
                 fields.update(track_fields)
                 # Album-wide personnel must never masquerade as track-specific credits.
                 fields.pop('personnel', None)
+                # A compilation has no single songwriting date. Require the
+                # reviewed date on the exact track, never inherit an album date.
+                fields.pop('compositionDate', None);fields.pop('composition_source', None)
+                for name in ('compositionDate','composition_source'):
+                    if track_fields.get(name):fields[name]=track_fields[name]
                 if track_fields.get('personnel'):
                     fields['personnel'] = track_fields['personnel']
                 matches.append(fields)

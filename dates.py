@@ -1,5 +1,5 @@
 """Dates with explicit meaning; release/copyright dates are never recording dates."""
-import json,re
+import json,re,unicodedata
 from pathlib import Path
 
 
@@ -42,6 +42,47 @@ def composition_years(value):
     return years(value)
 
 
+def composition_fields(metadata, details=None, registry=None):
+    """Composition evidence applies to songs and instrumental works alike."""
+    explicit=composition_years(metadata.get('compositionDate'))
+    if explicit:
+        result={'composition_year':explicit}
+        if metadata.get('composition_source'):result['composition_source']=metadata['composition_source']
+        return result
+    if registry is None:
+        path=Path(__file__).with_name('work-dates.json')
+        registry=json.loads(path.read_text()) if path.exists() else []
+    details=details or {}
+    writer='; '.join(str(v) for v in [details.get('composer',''),metadata.get('composer',''),metadata.get('songwriters','')])
+    work=details.get('work') or metadata.get('work') or metadata.get('title','')
+    def key(s):return ' '.join(unicodedata.normalize('NFKC',s).replace('’',"'").casefold().split())
+    found=[]
+    for entry in registry:
+        if not entry.get('source') or not entry.get('composition_year'):continue
+        if entry.get('title_match'):
+            writers=entry.get('writer_matches',[])
+            match=bool(writers and key(metadata.get('title',''))==key(entry['title_match'])
+                       and all(key(n) in key(writer) for n in writers))
+        else:
+            match=bool(entry.get('composer_match') and entry.get('work_pattern')
+                       and entry['composer_match'].casefold() in writer.casefold()
+                       and re.search(entry['work_pattern'],work,re.I))
+        if match:found.append(entry)
+    if found and len({e['composition_year'] for e in found})==1:
+        return {'composition_year':found[0]['composition_year'],'composition_source':found[0]['source']}
+    return {}
+
+
+def catalog_fields(metadata, registry):
+    result=dict(metadata)
+    result.pop('composition_year',None);result.pop('composition_date_status',None)
+    if not result.get('compositionDate'):result.pop('composition_source',None)
+    fields=composition_fields(result,registry=registry)
+    result.update(fields)
+    result['composition_date_status']='sourced' if fields.get('composition_source') else 'supplied' if fields else 'unknown'
+    return result
+
+
 def extract(metadata, classical=None, work_registry=None, recording_registry=None):
     result={}
     recording=years(metadata.get('recordingDate'))
@@ -65,21 +106,14 @@ def extract(metadata, classical=None, work_registry=None, recording_registry=Non
             if value:
                 result.update(release_year=value, release_label=label)
                 break
-    if classical:
-        composition=composition_years(metadata.get('compositionDate'))
-        if composition:result['composition_year']=composition
-        else:
-            catalog=Path(__file__).with_name('work-dates.json')
-            for entry in (work_registry if work_registry is not None else (json.loads(catalog.read_text()) if catalog.exists() else [])):
-                if entry['composer_match'].casefold() in classical.get('composer','').casefold() and re.search(entry['work_pattern'],classical.get('work',''),re.I):
-                    result['composition_year']=entry['composition_year']
-                    result['composition_source']=entry['source']
-                    break
+    result.update(composition_fields(metadata,classical,work_registry))
     return result
 
 
-def display_line(details):
+def display_line(details, include_composition=True):
     details=details or {}
-    if details.get('recording_year'):return 'Recorded · '+details['recording_year']
-    if details.get('release_year'):return details.get('release_label','Released')+' · '+details['release_year']
-    return ''
+    parts=[]
+    if include_composition and details.get('composition_year'):parts.append('Composed · '+details['composition_year'])
+    if details.get('recording_year'):parts.append('Recorded · '+details['recording_year'])
+    elif details.get('release_year'):parts.append(details.get('release_label','Released')+' · '+details['release_year'])
+    return '  |  '.join(parts)

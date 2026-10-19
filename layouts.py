@@ -107,9 +107,9 @@ def classical(cover_path, details, output):
     if details.get('conductor'):block('Conductor · '+details['conductor'],50,(200,197,190),2)
     block(details.get('orchestra',''),50,(200,197,190),2)
     block('; '.join(filter(None,(details.get('soloist',''),details.get('performer','')))),50,(200,197,190),2)
-    if dates.display_line(details):
+    if dates.display_line(details, include_composition=False):
         y=min(y,2040)
-        block(dates.display_line(details),42,(175,172,166),1)
+        block(dates.display_line(details, include_composition=False),42,(175,172,166),1)
     track_timing(draw, details, 150, 1810, 1420)
     canvas.save(output,quality=95)
 
@@ -196,6 +196,7 @@ def liner(cover_path, title, artist, output, details):
     block(details.get('display_track') or title,76,paper,2,22)
     block(artist,50,muted,1,22)
     block(title,36,muted,2,35)
+    if details.get('composition_year'):block('Composed · '+details['composition_year'],42,gold,2,22)
     if notes.get('personnel'):
         block('ON THIS TRACK',30,gold,1,22)
         for person in notes['personnel'][:6]:

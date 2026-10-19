@@ -142,7 +142,7 @@ class Planner:
     def presentation(self,state):
         """Only already displayed cached images; no downloads or model work."""
         recipes,members,features,exposures,recent,_=self.data()
-        if sum(1 for _,_,layout in recent[:5] if layout=='single')<5:return None
+        ordinary_ready=sum(1 for _,_,layout in recent[:5] if layout=='single')>=5
         rows=self.eligible(self.history(),features)
         # Index removal is authoritative, independently of historical analysis.
         with sqlite3.connect((self.root/'index.sqlite3').as_uri()+'?mode=ro',uri=True) as db:
@@ -175,7 +175,7 @@ class Planner:
         # A 28-photo retrospective reuses history; it need not invent one theme.
         if len(rows)==28 and not any(l=='mosaic' for _,_,l in recent[:16]):
             return dict(recipe=dict(id='recent-28',family='retrospective',title='The last 28, together',explanation='A look back at the photographs recently on the frame.'),photos=list(reversed(rows)),layout='mosaic')
-        if not options:return None
+        if not ordinary_ready or not options:return None
         with self.connect() as db:
             pairs={(a,b):n for a,b,n in db.execute('SELECT * FROM pairs')}
         def repetition(option):

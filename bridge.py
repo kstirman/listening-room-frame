@@ -123,7 +123,8 @@ class Bridge:
         self.state = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}
         self.session = requests.Session()
         self.session.headers['User-Agent'] = 'ListeningRoomArtwork/1.0'
-        self.stopped_at = None
+        self.stopped_at = (time.monotonic() - config.get("idle_seconds", 120)
+                           if self.state.get("view") == "photo" else None)
         self.next_photo = 0
         self.blocked_album = None
         self.running = True

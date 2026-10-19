@@ -43,6 +43,11 @@ class ThemeTests(unittest.TestCase):
   self.assertEqual(len(self.p.history()),28)
   show=self.p.presentation({});self.assertEqual(show['layout'],'mosaic');self.assertEqual(len(show['photos']),28)
   self.assertTrue(all(r['path'].exists() for r in show['photos']))
+ def test_first_28_does_not_wait_behind_smaller_montage(self):
+  for i in range(27):self.p.record(str(i),[self.photo(i)])
+  self.p.record('small',[self.photo(i) for i in range(6)],dict(recipe=dict(id='red',family='red'),layout='gallery'))
+  self.p.record('last',[self.photo(27)])
+  self.assertEqual(self.p.presentation({})['layout'],'mosaic')
  def test_montage_receipt_does_not_reorder_single_history(self):
   for i in range(8):self.p.record(str(i),[self.photo(i)])
   before=[r['content_key'] for r in self.p.history()];show=self.p.presentation({});self.assertIsNotNone(show)
@@ -107,6 +112,11 @@ class ThemeIntegrationTests(unittest.TestCase):
  setUp=ThemeTests.setUp
  tearDown=ThemeTests.tearDown
  photo=ThemeTests.photo
+ def test_restart_retains_established_photo_idle_state(self):
+  root=self.root/'bridge';root.mkdir();(root/'state.json').write_text(json.dumps(dict(view='photo')))
+  b=Bridge(dict(idle_photos_enabled=True,idle_seconds=120),root)
+  b.playback=Mock(return_value=('PAUSED_PLAYBACK',{}));b.show_idle_photo=Mock()
+  b.step();b.show_idle_photo.assert_called_once()
  def test_confirmed_receipt_and_music_resume(self):
   b=Bridge(dict(idle_photos_enabled=True,photo_themes_enabled=True,idle_seconds=0),self.root/'bridge')
   b.photo_stream=Mock();b.photo_stream.themes=self.p;b.photo_stream.available.return_value=[self.photo(0)]

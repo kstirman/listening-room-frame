@@ -128,17 +128,24 @@ class Resolver:
         self.busy = False
 
     def discover(self, album, artist):
-        ids = candidates(self.get('search', {'q': album, 'i': 'boutique'}), album)
-        if len(ids) > MAX_CANDIDATES:
-            return [], 'ambiguous'
         albums = []
-        for album_id in ids:
-            rows = album_rows(self.get('album/-/' + album_id), album, artist)
-            if rows:
-                for row in rows.values():
-                    row["_catalog_album_id"] = album_id
-                    row["_source"] = "https://www.qobuz.com/us-en/album/-/" + album_id
-                albums.append(rows)
+        seen = set()
+        # Generic titles can hide the requested performer beyond the first
+        # search page. Refine only when the first search finds no matching artist.
+        for query in (album, album + ' ' + artist):
+            ids = candidates(self.get('search', {'q': query, 'i': 'boutique'}), album)
+            if len(set(ids) | seen) > MAX_CANDIDATES:
+                return [], 'ambiguous'
+            for album_id in ids:
+                if album_id in seen:continue
+                seen.add(album_id)
+                rows = album_rows(self.get('album/-/' + album_id), album, artist)
+                if rows:
+                    for row in rows.values():
+                        row['_catalog_album_id'] = album_id
+                        row['_source'] = 'https://www.qobuz.com/us-en/album/-/' + album_id
+                    albums.append(rows)
+            if albums:break
         return albums, 'ready' if albums else 'unmatched'
 
     def _run(self, key, album, artist, keep_ready=False):

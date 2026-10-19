@@ -80,3 +80,8 @@ class ClassicalCoverageTests(unittest.TestCase):
   self.assertIsNone(normalize({'genre':'Jazz','composer':'Duke Ellington','title':'Piece'}))
  def test_ensemble_and_choir_are_displayed(self):
   self.assertEqual(normalize({'genre':'Opera','ensemble':'Ensemble','title':'Piece'})['orchestra'],'Ensemble')
+
+ def test_copyright_block_cannot_replace_personnel_or_composer(self):
+  p=Tracks();p.feed("""<div id="playerTracks"><div data-track="1"><p class="track__item--name">Work: I. Allegro</p><p class="track__info">A Composer, Composer - A Pianist, MainArtist, Piano</p><p class="track__info">Copyright 2024 A Label</p></div></div>""")
+  d=normalize(p.tracks['1'])
+  self.assertEqual(d['composer'],'A Composer');self.assertEqual(d['performer'],'A Pianist')

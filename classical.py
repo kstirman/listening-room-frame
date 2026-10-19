@@ -62,7 +62,10 @@ class Tracks(HTMLParser):
     else:
      self.work=''
    elif key=='credits':
-    self.tracks[self.track][key]=value
+    # A track has separate personnel and copyright info blocks. Preserve all
+    # blocks so a trailing rights notice cannot erase its credited performers.
+    old=self.tracks[self.track].get(key,'')
+    self.tracks[self.track][key]=' - '.join(dict.fromkeys(v for v in (old,value) if v))
    self.capture=None
   if self.depth==self.group_depth:
    self.work='';self.track=None;self.group_depth=None

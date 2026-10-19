@@ -112,7 +112,7 @@ class AutomaticCatalogTests(unittest.TestCase):
 
     def test_artist_and_editions_checked(self):
         for pages,status in [([page('Other')],'unmatched'),([page(),page()],'ambiguous')]:
-            r=Resolver(Mock(side_effect=[search(('a','b') if len(pages)==2 else ('a',))]+pages))
+            r=Resolver(Mock(side_effect=[search(('a','b') if len(pages)==2 else ('a',))]+pages+([search(())] if status=='unmatched' else [])))
             r.lookup(META);self.wait(r);self.assertEqual(r.lookup(META)[1],status)
 
     def test_wrong_duration_and_missing_parts(self):
@@ -170,3 +170,15 @@ class AutomaticCatalogTests(unittest.TestCase):
             b.auto_catalog.lookup=Mock(return_value=(None,'ambiguous'))
             d=b.details(dict(META,resource='http://example.test/proxy/1'))
             self.assertEqual(d['catalog_status'],'ambiguous')
+
+    def test_artist_refinement_when_generic_title_hides_recording(self):
+        get=Mock(side_effect=[search(('other',)),page('Other'),search(('target',)),page()])
+        r=Resolver(get);r.lookup(META);self.wait(r)
+        self.assertEqual(r.lookup(META)[1],'matched')
+        self.assertEqual(get.call_args_list[2].args[1]['q'],'Example Cycle Example Choir')
+        self.assertEqual(get.call_count,4)
+
+    def test_refined_search_keeps_artist_and_duration_guards(self):
+        get=Mock(side_effect=[search(()),search(('target',)),page('Other')])
+        r=Resolver(get);r.lookup(META);self.wait(r)
+        self.assertEqual(r.lookup(META)[1],'unmatched')

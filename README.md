@@ -305,19 +305,50 @@ leave the normal display intact. This is a reviewed mapping, not automatic
 search; keep personal mappings in private configuration. Audio playback and
 artwork-source selection are unchanged.
 
+### Shared private music catalog
+
+`music-catalog.sqlite3` in the artwork state directory is the permanent metadata
+catalog. JPLAY/Qobuz IDs and Audirvana discovery both write complete parsed album
+track lists and read saved editions. Local files use indexed current tags plus
+reviewed enrichment and protected overrides. Source edition IDs, local file
+identities, work fields and recording/release dates remain distinct: title
+similarity never merges performances. Exact recording checks still apply.
+
+The database keeps parsed source credits, provenance, reviewed source documents,
+and resolved display facts. It does not contain audio, cover images or stream
+credentials. It is private (0600), must be backed up, and must never be published.
+The legacy `catalog-cache.sqlite3` is copied idempotently and preserved for rollback.
+Old cache entries without a known edition ID remain usable by exact metadata;
+sharing by an explicit edition ID requires that ID to have been learned.
+
+Seed local metadata before installation with the existing artwork Python environment:
+
+```sh
+python music_catalog.py --database /private/state/music-catalog.sqlite3 \
+  --library-root /private/music --legacy-cache /private/state/catalog-cache.sqlite3
+```
+
+This reads file tags and durations without changing audio. Later playback-triggered
+background refreshes check local files and reviewed documents every 15 minutes;
+only new or changed audio files require probing. Removed/changed files cannot
+match stale indexed facts. Original reviewed files remain the editing authority
+and are preserved. All available parsed credits are retained, but unknown dates,
+roles and instruments stay unknown. Generic track credits can supply songwriters,
+explicit instruments, producers and engineers; reviewed liner notes take priority.
+
 ### Automatic Audirvana recording matches
 
-Classical Audirvana UPnP proxy streams now trigger a background search of Qobuz's
+Audirvana UPnP proxy streams of any genre now trigger a background search of Qobuz's
 public album catalog. Only the album title is sent in the search query; album and
 artist must match (ignoring case/spacing), then one unique track title and duration
 within one second must identify an edition. Multiple matching editions, incomplete
 work sequences and lookup failures retain the fallback display. Search is limited
 to twelve exact-title candidates, one job at a time, with bounded network timeouts.
 Successful album catalogs are cached in memory for 30 minutes and privately in
-`catalog-cache.sqlite3`, so service restarts and repeat albums can reuse them
+`music-catalog.sqlite3`, so service restarts and repeat albums can reuse them
 immediately. Catalogs older than seven days refresh in the background while
 their saved matches remain usable; a failed refresh preserves the prior catalog.
-The disk cache retains at most 256 albums; exact artist,
+Saved records have no album-count eviction; exact artist,
 track, duration, and ambiguity checks still run on every lookup. Failed searches
 are not persisted and retry after five minutes. Pending cards say “Looking up
 work and credits…”; completed lookups invalidate the detail cache on the next

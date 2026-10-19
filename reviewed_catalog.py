@@ -4,7 +4,7 @@ import classical
 import timing
 
 
-def lookup(metadata, mappings, fetch):
+def lookup(metadata, mappings, fetch, catalog=None):
     if not isinstance(mappings, list):
         return None
     title = metadata.get('title')
@@ -18,9 +18,16 @@ def lookup(metadata, mappings, fetch):
     album_id = matches[0].get('qobuz_album_id', '')
     if not isinstance(album_id, str) or not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
         return None
-    parser = classical.Tracks()
-    parser.feed(fetch(album_id))
-    rows = classical.catalog(parser.tracks)
+    rows = catalog.edition(album_id) if catalog else None
+    if not rows:
+        if catalog:
+            from auto_catalog import parsed_rows
+            rows = parsed_rows(fetch(album_id), album_id)
+            catalog.put_edition(album_id, rows, metadata['album'], metadata['artist'])
+        else:
+            parser = classical.Tracks()
+            parser.feed(fetch(album_id))
+            rows = classical.catalog(parser.tracks)
     match = select(metadata, rows)
     return match if match and match[1] else None
 

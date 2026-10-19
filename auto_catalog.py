@@ -1,10 +1,7 @@
 """Bounded background catalog discovery; no credentials or playback control."""
 import json
-from contextlib import closing
 from html.parser import HTMLParser
-from pathlib import Path
 import re
-import sqlite3
 import threading
 import time
 import unicodedata
@@ -12,6 +9,8 @@ from urllib.parse import urlparse
 import requests
 import classical
 import timing
+import music_catalog
+import liner_notes
 from reviewed_catalog import select
 
 MAX_CANDIDATES = 12
@@ -19,43 +18,9 @@ CACHE_VERSION = 1
 CACHE_AGE = 7 * 86400
 
 
-class CatalogCache:
-    """Private parsed metadata only; failed lookups never replace saved catalogs."""
-    def __init__(self, path):
-        self.path = Path(path)
-
-    def load(self, key):
-        if not self.path.is_file():
-            return None
-        try:
-            with closing(sqlite3.connect(self.path, timeout=1)) as db:
-                row = db.execute('SELECT saved_at, payload FROM catalogs WHERE album=? AND artist=? AND version=?', (*key, CACHE_VERSION)).fetchone()
-            if not row or len(row[1]) > 2_000_000:
-                return None
-            albums = json.loads(row[1])
-            if not isinstance(albums, list) or not 1 <= len(albums) <= MAX_CANDIDATES:
-                return None
-            if any(not isinstance(rows, dict) or not rows or len(rows) > 2048 or
-                   any(not isinstance(value, dict) for value in rows.values()) for rows in albums):
-                return None
-            return albums, not 0 <= time.time() - row[0] < CACHE_AGE
-        except (OSError, sqlite3.Error, ValueError, TypeError):
-            return None
-
-    def save(self, key, albums):
-        payload = json.dumps(albums)
-        if not albums or len(payload) > 2_000_000:
-            return
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with closing(sqlite3.connect(self.path, timeout=1)) as db:
-                self.path.chmod(0o600)
-                db.execute('CREATE TABLE IF NOT EXISTS catalogs (album TEXT, artist TEXT, version INTEGER, saved_at REAL, payload TEXT, PRIMARY KEY(album,artist))')
-                db.execute('INSERT OR REPLACE INTO catalogs VALUES(?,?,?,?,?)', (*key, CACHE_VERSION, time.time(), payload))
-                db.execute('DELETE FROM catalogs WHERE rowid NOT IN (SELECT rowid FROM catalogs ORDER BY saved_at DESC LIMIT 256)')
-                db.commit()
-        except (OSError, sqlite3.Error):
-            pass  # A cache failure must not prevent an otherwise verified match.
+class CatalogCache(music_catalog.Store):
+    """Backward-compatible interface to the permanent shared catalog."""
+    pass
 
 
 def canonical(value):
@@ -107,6 +72,25 @@ class Headings(HTMLParser):
             self.headings.append(''.join(self.text)); self.active = False
 
 
+def parsed_rows(page, album_id=None):
+    parser = classical.Tracks(); parser.feed(page)
+    rows = classical.catalog(parser.tracks)
+    releases = [r for r in records(page) if r.get("@type") in ("Product", "MusicAlbum")]
+    for track_id, row in rows.items():
+        row["_catalog_track_id"] = track_id
+        if album_id:
+            row["_catalog_album_id"] = album_id
+            row["_source"] = "https://www.qobuz.com/us-en/album/-/" + album_id
+        for item in releases:
+            date = item.get("releaseDate") or item.get("datePublished")
+            if date:row.setdefault("releaseDate", date)
+            label = item.get("recordLabel")
+            if isinstance(label, dict):label = label.get("name")
+            if isinstance(label, str):row.setdefault("label", label)
+        row.update(liner_notes.from_credits(row.get("credits", "")))
+    return rows
+
+
 def album_rows(page, album, artist):
     products = [r for r in records(page) if r.get('@type') == 'Product']
     matching = [p for p in products if canonical(p.get('name')) == canonical(album)]
@@ -115,8 +99,7 @@ def album_rows(page, album, artist):
     headings = Headings(); headings.feed(page)
     full_heading = any(canonical(h).startswith(canonical(album) + ' by ') for h in headings.headings)
     if not matching and not full_heading:return None
-    parser = classical.Tracks(); parser.feed(page)
-    rows = classical.catalog(parser.tracks)
+    rows = parsed_rows(page)
     album_artist = any(isinstance(p.get('brand'), dict) and
                        canonical(p['brand'].get('name')) == canonical(artist) for p in (matching or products))
     for row in rows.values():
@@ -152,6 +135,9 @@ class Resolver:
         for album_id in ids:
             rows = album_rows(self.get('album/-/' + album_id), album, artist)
             if rows:
+                for row in rows.values():
+                    row["_catalog_album_id"] = album_id
+                    row["_source"] = "https://www.qobuz.com/us-en/album/-/" + album_id
                 albums.append(rows)
         return albums, 'ready' if albums else 'unmatched'
 

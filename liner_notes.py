@@ -42,6 +42,10 @@ def lookup(metadata, config):
         data = json.loads(raw)
     except (OSError, ValueError, TypeError):
         return {}
+    return lookup_data(metadata, data)
+
+
+def lookup_data(metadata, data):
     if not isinstance(data, dict) or not isinstance(data.get('albums'), list):
         return {}
     length = timing.seconds(metadata.get('duration_seconds'))
@@ -70,3 +74,23 @@ def lookup(metadata, config):
                     fields['personnel'] = track_fields['personnel']
                 matches.append(fields)
     return matches[0] if len(matches) == 1 else {}
+
+
+def from_credits(credits):
+    """Only explicit per-track role labels, no inferred instrument or personnel."""
+    fields = {}; people = []; roles = {}
+    for credit in credits.split(' - '):
+        name, sep, listed = credit.partition(', ')
+        if not sep:continue
+        for role in [r.strip() for r in listed.split(',')]:
+            roles.setdefault(role, []).append(name)
+            if role in {'Piano','Vocals','Vocal','Guitar','Bass','Double Bass','Drums',
+                        'Violin','Viola','Cello','Saxophone','Trumpet','Percussion',
+                        'Flute','Clarinet','Organ','Keyboards','Harp','Trombone'}:
+                people.append({'name':name,'role':role})
+    for field,labels in [('songwriters',('Composer','Lyricist','Author','Writer')),
+                         ('producer',('Producer',)),('engineer',('Engineer','Recording Engineer','Mixing Engineer'))]:
+        names = list(dict.fromkeys(n for label in labels for n in roles.get(label,[])))
+        if names:fields[field]='; '.join(names)
+    if people:fields['personnel']=people
+    return fields

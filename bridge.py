@@ -21,6 +21,7 @@ import local_match
 import local_composition
 import library_metadata
 import auto_catalog
+import music_catalog
 import reviewed_catalog
 import classical
 import dates
@@ -130,7 +131,13 @@ class Bridge:
         self.detail_cache = {}
         self.local_compositions = local_composition.Catalog()
         self.local_matches = local_match.Index()
-        self.auto_catalog = auto_catalog.Resolver(cache_path=self.root / 'catalog-cache.sqlite3')
+        self.music_catalog = music_catalog.Store(self.root / 'music-catalog.sqlite3')
+        try:
+            self.music_catalog.migrate(self.root / 'catalog-cache.sqlite3')
+            self.music_catalog.sync_documents(self.config, Path(__file__).parent)
+        except Exception as error:
+            LOG.warning('Music catalog import deferred: %s', type(error).__name__)
+        self.auto_catalog = auto_catalog.Resolver(cache_path=self.music_catalog.path)
         self.photo_stream = Stream(config) if config.get("photo_stream_enabled", False) else None
         self.local_index = {}
         self.index_at = 0
@@ -286,13 +293,15 @@ class Bridge:
             field = metadata['source'] + '_lines'
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
-        automatic = (not metadata.get('album_id') and bool(classical.normalize(metadata)) and
+        self.music_catalog.refresh(self.config, Path(__file__).parent)
+        automatic = (not metadata.get('album_id') and
                      self.config.get('auto_catalog', True) and
                      (urlparse(metadata.get('resource', '')).path.startswith('/audirvana/') or
                       self.config.get('auto_catalog_other_upnp', False)))
         cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')), metadata.get('album', ''), metadata.get('artist', ''))
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
+        cache_key += (self.music_catalog.revision,)
         if automatic:
             cache_key += (int(time.monotonic() // 10), self.auto_catalog.revision)
         if cache_key in self.detail_cache:
@@ -303,7 +312,9 @@ class Bridge:
         local_resource = None
         if not metadata.get('album_id') and self.config.get('library_root') and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/'):
             try:
-                match, local_status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                match, local_status = self.music_catalog.match_local(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                if not match and local_status != 'local_ambiguous':
+                    match, local_status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
                 if match:
                     local_resource, fields = match
                     enriched.update(fields)
@@ -311,44 +322,57 @@ class Bridge:
                 local_status = 'local_unavailable'
                 LOG.warning('Local recording match unavailable: %s', type(error).__name__)
         if metadata.get('album_id'):
-            parser = classical.Tracks()
-            page = self.album_page(metadata['album_id'])
-            parser.feed(page)
-            album_parser = MetaParser()
-            album_parser.feed(page)
-            for record in album_parser.structured:
-                if isinstance(record, dict) and record.get('@type') in ('Product', 'MusicAlbum'):
-                    value = record.get('releaseDate') or record.get('datePublished')
-                    if value:enriched.setdefault('releaseDate', value)
-            enriched.update(parser.tracks.get(track.rsplit('/', 1)[-1], {}))
-            ordered = classical.catalog(parser.tracks)
-            enriched.update(ordered.get(track.rsplit('/', 1)[-1], {}))
-            work_timing = timing.composition(ordered, track.rsplit('/', 1)[-1])
+            ordered = self.music_catalog.edition(metadata['album_id'])
+            if not ordered:
+                page = self.album_page(metadata['album_id'])
+                ordered = auto_catalog.parsed_rows(page, metadata['album_id'])
+                album_parser = MetaParser(); album_parser.feed(page)
+                album, artist = metadata.get('album'), metadata.get('artist')
+                for record in album_parser.structured:
+                    if isinstance(record, dict) and record.get('@type') in ('Product', 'MusicAlbum'):
+                        value = record.get('releaseDate') or record.get('datePublished')
+                        if value:enriched.setdefault('releaseDate', value)
+                    if isinstance(record, dict) and record.get('@type') == 'Product':
+                        album = record.get('name') or album
+                        brand = record.get('brand', {})
+                        if isinstance(brand, dict):artist = brand.get('name') or artist
+                self.music_catalog.put_edition(metadata['album_id'], ordered, album, artist)
+            selected = track.rsplit('/', 1)[-1]
+            row = ordered.get(selected)
+            if row:
+                enriched.update(row)
+                work_timing = timing.composition(ordered, selected)
         elif metadata.get('resource') and self.config.get('library_root'):
-            try:
-                enriched.update(classical.file_tags(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
-            except Exception as error:
-                LOG.warning('File metadata unavailable: %s', type(error).__name__)
-            # Reviewed metadata remains usable even if ffprobe cannot read a file.
-            try:
-                enriched.update(library_metadata.lookup(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
-            except Exception as error:
-                LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
-        if not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
-            try:
-                work_timing = self.local_compositions.context(local_resource or metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
-            except Exception as error:
-                LOG.warning('Local composition unavailable: %s', type(error).__name__)
+            saved_local = self.music_catalog.local(local_resource or metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+            if saved_local:
+                fields, work_timing = saved_local
+                enriched.update(fields)
+                local_status = 'local_matched'
+            else:
+                try:
+                    enriched.update(classical.file_tags(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
+                except Exception as error:
+                    LOG.warning('File metadata unavailable: %s', type(error).__name__)
+                # Reviewed metadata remains usable even if ffprobe cannot read a file.
+                try:
+                    enriched.update(library_metadata.lookup(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
+                except Exception as error:
+                    LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
+            if work_timing is None and not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
+                try:
+                    work_timing = self.local_compositions.context(local_resource or metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                except Exception as error:
+                    LOG.warning('Local composition unavailable: %s', type(error).__name__)
         local_priority = local_status in ('local_matched', 'local_ambiguous', 'local_unavailable')
         if work_timing is None and not metadata.get('album_id') and not local_priority:
             try:
-                match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page)
+                match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page, self.music_catalog)
                 if match:
                     row, work_timing = match
                     enriched.update(row)
             except Exception as error:
                 LOG.warning('Reviewed catalog unavailable: %s', type(error).__name__)
-        catalog_status = None
+        catalog_status = "catalog_id" if metadata.get("album_id") and row else None
         if local_priority:
             catalog_status = local_status
         elif automatic and work_timing is None:
@@ -360,8 +384,9 @@ class Bridge:
             catalog_status = 'matched'
         notes = {}
         if self.config.get('liner_notes_enabled', True):
-            notes = liner_notes.lookup(metadata, self.config)
-            notes.update(liner_notes.extract(enriched))
+            notes = liner_notes.extract(enriched)
+            notes.update(liner_notes.lookup_data(metadata, self.music_catalog.document('liner', {}) or {}))
+            notes.update(liner_notes.lookup(metadata, self.config))
         details = classical.normalize(enriched)
         if any(notes.get(k) for k in ('personnel', 'songwriters', 'recordingLocation', 'label', 'producer', 'engineer', 'note')):
             details = dict(details or {}, liner_notes=notes)
@@ -373,7 +398,12 @@ class Bridge:
         duration = timing.seconds(enriched.get('duration_seconds'))
         if duration: details = dict(details or {}, duration_seconds=duration)
         if work_timing: details = dict(details or {}, composition=work_timing)
-        date_fields = dates.extract(dict(enriched, **notes), details)
+        date_metadata = dict(enriched, **notes)
+        if enriched.get('_catalog_track_id'):
+            date_metadata['object_id'] = 'qobuz/track/' + enriched['_catalog_track_id']
+        date_fields = dates.extract(date_metadata, details,
+            work_registry=self.music_catalog.document('work_dates'),
+            recording_registry=self.music_catalog.document('recording_dates'))
         if date_fields:
             details = dict(details or {}, **date_fields)
         # Preserve reviewed local captions even when renderer/file tags are blank.
@@ -385,6 +415,10 @@ class Bridge:
                 details = dict(details or {}, **captions)
         if len(self.detail_cache) >= 128:
             self.detail_cache.pop(next(iter(self.detail_cache)))
+        try:
+            self.music_catalog.remember(metadata, details)
+        except Exception as error:
+            LOG.warning('Music catalog observation deferred: %s', type(error).__name__)
         self.detail_cache[cache_key] = details
         return details
 

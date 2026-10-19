@@ -42,7 +42,7 @@ def composition_years(value):
     return years(value)
 
 
-def extract(metadata, classical=None):
+def extract(metadata, classical=None, work_registry=None, recording_registry=None):
     result={}
     recording=years(metadata.get('recordingDate'))
     if not recording:
@@ -54,7 +54,8 @@ def extract(metadata, classical=None):
     if recording:result['recording_year']=recording
     if not recording:
         registry=Path(__file__).with_name('recording-dates.json')
-        entry=json.loads(registry.read_text()).get(metadata.get('object_id','')) if registry.exists() else None
+        entries=recording_registry if recording_registry is not None else (json.loads(registry.read_text()) if registry.exists() else {})
+        entry=entries.get(metadata.get('object_id',''))
         if entry:
             result['recording_year']=entry['recording_year']
             result['recording_source']=entry['recording_source']
@@ -69,7 +70,7 @@ def extract(metadata, classical=None):
         if composition:result['composition_year']=composition
         else:
             catalog=Path(__file__).with_name('work-dates.json')
-            for entry in json.loads(catalog.read_text()) if catalog.exists() else []:
+            for entry in (work_registry if work_registry is not None else (json.loads(catalog.read_text()) if catalog.exists() else [])):
                 if entry['composer_match'].casefold() in classical.get('composer','').casefold() and re.search(entry['work_pattern'],classical.get('work',''),re.I):
                     result['composition_year']=entry['composition_year']
                     result['composition_source']=entry['source']

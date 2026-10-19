@@ -61,7 +61,7 @@ class Tracks(HTMLParser):
      self.tracks[self.track].update(work=self.work,movementName=value,work_scope=self.work_scope,part_group=True)
     else:
      self.work=''
-   elif 'Composer' in value or 'Conductor' in value:
+   elif key=='credits':
     self.tracks[self.track][key]=value
    self.capture=None
   if self.depth==self.group_depth:

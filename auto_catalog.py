@@ -8,6 +8,7 @@ import unicodedata
 from urllib.parse import urlparse
 import requests
 import classical
+import catalog_pages
 import timing
 import music_catalog
 import liner_notes
@@ -103,6 +104,10 @@ class Headings(HTMLParser):
 def parsed_rows(page, album_id=None):
     parser = classical.Tracks(); parser.feed(page)
     rows = classical.catalog(parser.tracks)
+    expected = catalog_pages.Page(page).expected
+    for row in rows.values():
+        row["_catalog_complete"] = expected is None or len(rows) == expected
+        if expected is not None:row["_catalog_expected_tracks"] = expected
     releases = [r for r in records(page) if r.get("@type") in ("Product", "MusicAlbum")]
     for track_id, row in rows.items():
         row["_catalog_track_id"] = track_id
@@ -143,7 +148,10 @@ def fetch(path, params=None):
     response.raise_for_status()
     if len(response.content) > 2_000_000:
         raise ValueError('Catalog response too large')
-    return response.text
+    page = response.text
+    if path.startswith('album/-/'):
+        page = catalog_pages.complete(page, path.rsplit('/', 1)[-1], requests.get)
+    return page
 
 
 class Resolver:
@@ -225,6 +233,7 @@ class Resolver:
                             if matching:saved = (matching, prior[1])
                 if saved:
                     albums, stale = saved
+                    stale = stale or any(catalog_pages.needs_refresh(rows) for rows in albums)
                     status = 'ready'
                     if len(self.cache) >= 32:
                         self.cache.pop(next(iter(self.cache)))

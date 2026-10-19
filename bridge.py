@@ -285,7 +285,8 @@ class Bridge:
             r.raise_for_status()
             if len(self.pages) >= 8:
                 self.pages.pop(next(iter(self.pages)))
-            self.pages[album_id] = r.text
+            import catalog_pages
+            self.pages[album_id] = catalog_pages.complete(r.text, album_id, self.session.get)
         return self.pages[album_id]
 
     def details(self, metadata):
@@ -323,7 +324,8 @@ class Bridge:
                 LOG.warning('Local recording match unavailable: %s', type(error).__name__)
         if metadata.get('album_id'):
             ordered = self.music_catalog.edition(metadata['album_id'])
-            if not ordered:
+            import catalog_pages
+            if not ordered or catalog_pages.needs_refresh(ordered):
                 page = self.album_page(metadata['album_id'])
                 ordered = auto_catalog.parsed_rows(page, metadata['album_id'])
                 album_parser = MetaParser(); album_parser.feed(page)

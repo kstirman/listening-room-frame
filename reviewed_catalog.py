@@ -2,6 +2,7 @@
 import re
 import classical
 import timing
+import catalog_pages
 
 
 def lookup(metadata, mappings, fetch, catalog=None):
@@ -19,7 +20,7 @@ def lookup(metadata, mappings, fetch, catalog=None):
     if not isinstance(album_id, str) or not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
         return None
     rows = catalog.edition(album_id) if catalog else None
-    if not rows:
+    if not rows or catalog_pages.needs_refresh(rows):
         if catalog:
             from auto_catalog import parsed_rows
             rows = parsed_rows(fetch(album_id), album_id)

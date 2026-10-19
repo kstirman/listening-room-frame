@@ -60,6 +60,10 @@ def composition(tracks, current):
     """
     if current not in tracks:
         return None
+    # Never label a paginated fragment (including legacy 50-row caches) a whole work.
+    import catalog_pages
+    if catalog_pages.needs_refresh(tracks):
+        return None
     # Catalog normalization marks only validated, explicitly labeled audience
     # interludes. They remain album tracks but are not musical movements.
     if tracks[current].get('non_music_interlude'):
@@ -68,6 +72,8 @@ def composition(tracks, current):
     pos = next(i for i, (key, _) in enumerate(entries) if key == current)
     target = entries[pos][1]
     work = target.get('work')
+    if re.search(r'(?: / |, )Appendix$', work or '', re.I):
+        return None
     if not work or not (number(target) or target.get('part_group')):
         return None
     def same(item):

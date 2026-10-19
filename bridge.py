@@ -599,6 +599,12 @@ class Bridge:
         photos = self.photo_stream.available() if self.photo_stream else []
         if not photos:
             photos = idle_photos.load(self.config)
+        if self.photo_stream and photos:
+            fresh = [p for p in photos if p['key'] not in self.state.get('photo_recent', [])]
+            if not fresh:
+                # Hold the current card while the worker prepares fresh choices.
+                return
+            photos = fresh
         if not photos:
             self.restore()
             return

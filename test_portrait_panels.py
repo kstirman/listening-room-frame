@@ -34,6 +34,7 @@ class PanelTests(unittest.TestCase):
                 rows.append({'key':str(i),'path':p,'caption':''})
             rows.append({'key':'bad','path':root/'missing','caption':''})
             self.assertEqual(set(idle_photos.portrait_group(rows,0,{'photo_recent':['1']})),{0,2,3})
+            self.assertEqual(idle_photos.portrait_group(rows,0,{'photo_recent':['1','2','3']}),[0])
 
     def test_relative_dates_require_verified_exact_anniversary(self):
         from datetime import date

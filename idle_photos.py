@@ -162,7 +162,7 @@ def portrait_group(photos, primary, state):
         return [primary]
     others = [i for i in ratios if i != primary]
     fresh = [i for i in others if photos[i]['key'] not in state.get('photo_recent', [])]
-    others = (fresh or others)[:20]
+    others = fresh[:20]
     options = [(primary,) + group for count in (1, 2)
                for group in combinations(others, count)]
     if not options:

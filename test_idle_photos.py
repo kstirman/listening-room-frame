@@ -60,6 +60,17 @@ class PhotoTests(unittest.TestCase):
         self.step(140); self.assertEqual(self.current, 'PHOTO2')
         self.assertEqual(idle_photos.interval({'idle_photo_interval_seconds': 1}), 20)
 
+    def test_stream_holds_card_instead_of_replaying_recent_queue(self):
+        self.b.photo_stream = Mock()
+        self.b.photo_stream.available.return_value = idle_photos.load(self.b.config)
+        self.b.state['photo_recent'] = ['one.jpg', 'two.jpg']
+        self.step(120)
+        self.tv.upload.assert_not_called()
+        self.assertEqual(self.current, 'ALBUM')
+        self.b.state['photo_recent'] = ['one.jpg']
+        self.step(121)
+        self.assertEqual(self.b.state['photo_key'], 'two.jpg')
+
     def test_portrait_group_history_only_after_tv_success(self):
         self.manifest.write_text(json.dumps({'photos': [{'file':'one.jpg'}, {'file':'two.jpg'}, {'file':'three.jpg'}]}))
         Image.new('RGB', (80, 120), 'green').save(self.root/'three.jpg')

@@ -13,6 +13,7 @@ import time
 from PIL import Image, ImageOps
 import idle_photos
 import photo_metadata
+from photo_themes import Planner
 from photo_places import Places
 from shared_album import Client, AlbumError
 from import_photos import get
@@ -100,6 +101,10 @@ class Stream:
         self.places=Places(config.get('photo_places_file'))
         self.count=max(2,min(20,int(config.get('photo_prefetch_count',10))))
         self.budget=max(32,min(1024,int(config.get('photo_cache_mb',128))))*1024*1024
+        self.themes=None
+        if config.get('photo_themes_enabled') and config.get('photo_analysis_file'):
+            try:self.themes=Planner(config,self.root,self.clock)
+            except (OSError,sqlite3.Error,ValueError):LOG.warning('Photo themes unavailable; ordinary rotation retained')
         self.thread=None;self.lock=threading.Lock();self.state={};self.next_tick=0
         self.startup=True
         try:
@@ -196,8 +201,21 @@ class Stream:
         # Refresh changed dates/captions without downloading existing queued images.
         queue=[dict(json.loads(by_key[p['file'][7:-4]]['extra']),file=p['file'],
                     content_key=by_key[p['file'][7:-4]].get('content_key'),
-                    date=by_key[p['file'][7:-4]]['date'],date_source='Google Photos Date taken (shared album)') for p in queue]
+                    date=by_key[p['file'][7:-4]]['date'],date_source='Google Photos Date taken (shared album)',
+                    **({'theme':p['theme']} if p.get('theme') else {})) for p in queue]
         queue=queue[:self.count+1]
+        planner=self.themes
+        if planner:
+            try:
+                planner.refresh()
+                for receipt in state.get('photo_receipts',[]):
+                    planner.record(receipt['id'],receipt['photos'],receipt.get('presentation'))
+                rows=planner.plan(rows,state)
+                allowed={r['content_key'] for r in rows}
+                queue=[r for r in queue if r.get('content_key') in allowed]
+            except (OSError,sqlite3.Error,ValueError,KeyError):
+                LOG.warning('Photo theme refresh unavailable; ordinary queue retained')
+                planner=None
         choices=[{'key':'images/'+r['key']+'.jpg','date':r['date'] or ''} for r in rows]
         planned=copy.deepcopy(state);planned.pop('photo_index',None)
         excluded={i for i,p in enumerate(choices) if any(q['file']==p['key'] for q in queue)}
@@ -207,9 +225,12 @@ class Stream:
         target_count=self.count+int(any(q['file']==current for q in queue))
         attempts=0
         while len(queue)<target_count and len(excluded)<len(choices) and attempts<self.count*2:
-            i=idle_photos.choose(choices,planned,excluded);excluded.add(i);attempts+=1
+            i=planner.choose(rows,planned,excluded) if planner else idle_photos.choose(choices,planned,excluded)
+            if i is None:break
+            excluded.add(i);attempts+=1
             try:
                 prepared=self.prepare(rows[i],index)
+                if planner:prepared=planner.annotate(prepared)
                 used=sum((self.root/q['file']).stat().st_size for q in queue)
                 if used+(self.root/prepared['file']).stat().st_size>self.budget:
                     (self.root/prepared['file']).unlink();break
@@ -229,19 +250,22 @@ class Stream:
 
     def prune(self,queue):
         keep={Path(r['file']).name for r in queue}
+        history=self.themes.history() if self.themes else []
         current=self.snapshot().get('photo_key','')
         if re.fullmatch(r'images/[a-f0-9]{64}\.jpg',current):keep.add(Path(current).name)
         # Brief overlap protects a renderer that already opened the previous manifest.
+        history_names={Path(r['file']).name for r in history}
         candidates=[]
         for p in self.images.iterdir():
             if p.is_symlink() or not re.fullmatch(r'[a-f0-9]{64}\.(jpg|tmp)',p.name):continue
             if p.name in keep:continue
             candidates.append(p)
-        candidates.sort(key=lambda p:p.stat().st_mtime)
+        candidates.sort(key=lambda p:(p.name in history_names,p.stat().st_mtime))
         total=sum(p.stat().st_size for p in self.images.iterdir() if p.is_file())
         count=len(list(self.images.glob('*.jpg')))
         for p in candidates:
-            if self.clock()-p.stat().st_mtime<60 and total<=self.budget and count<=2*(self.count+1):continue
+            if p.name in history_names and total<=self.budget and count<=28+2*(self.count+1):continue
+            if self.clock()-p.stat().st_mtime<60 and total<=self.budget and count<=28*(bool(self.themes))+2*(self.count+1):continue
             size=p.stat().st_size;p.unlink();total-=size;count-=1
 
     def work(self):

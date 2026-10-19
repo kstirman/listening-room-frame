@@ -293,3 +293,48 @@ def photo_panels(photos, output):
                 baseline += 90
         canvas.paste(panel, (x, y)); x += width + gap
     canvas.save(output, quality=95)
+
+
+def photo_montage(photos, recipe, output, layout='gallery'):
+    """Uncropped recent photographs with an explicit, readable connection."""
+    if not 2<=len(photos)<=28:raise ValueError('Montage needs 2–28 photos')
+    canvas=Image.new('RGB',(3840,2160),(17,20,23));draw=ImageDraw.Draw(canvas)
+    from functools import lru_cache
+    count=len(photos);gap=16;top=24;bottom=1850;ratios=[]
+    for row in photos:
+        with Image.open(row['path']) as image:
+            w,h=image.size
+            if image.getexif().get(274) in (5,6,7,8):w,h=h,w
+            ratios.append(w/h)
+    @lru_cache(None)
+    def partitions(n,k):
+        if not k:return [()] if n==0 else []
+        return [(a,)+tail for a in range(2,min(10,n)+1) if 2*(k-1)<=n-a<=10*(k-1) for tail in partitions(n-a,k-1)]
+    best=None
+    for nr in ([4,5] if count>16 else [3] if layout=='pairs' and count>=6 else [2,3] if count>=6 else [1]):
+        for sizes in partitions(count,nr):
+            pos=0;heights=[]
+            for size in sizes:
+                heights.append((3840-gap*(size+1))/sum(ratios[pos:pos+size]));pos+=size
+            scale=min(1,(bottom-top-nr*48-gap*(nr-1))/sum(heights))
+            area=sum((3840-gap*(n+1))*h*scale*scale for n,h in zip(sizes,heights))
+            score=area-0.15*(max(heights)-min(heights))*scale*3840
+            if best is None or score>best[0]:best=(score,sizes,heights,scale)
+    if best is None:raise ValueError('Unsupported montage size')
+    _,sizes,heights,scale=best;y=top+(bottom-top-sum(int(h*scale)+48 for h in heights)-gap*(len(sizes)-1))//2;pos=0
+    for count,height in zip(sizes,heights):
+        height=max(1,int(height*scale));widths=[int(ratios[i]*height) for i in range(pos,pos+count)]
+        x=(3840-sum(widths)-gap*(count-1))//2
+        for row,width in zip(photos[pos:pos+count],widths):
+            with Image.open(row['path']) as image:
+                image=ImageOps.exif_transpose(image).convert('RGB')
+                canvas.paste(image.resize((width,height),Image.Resampling.LANCZOS),(x,y))
+            label=row.get('date','')
+            if label:draw.text((x+width//2,y+height+8),label,font=font(28),fill=(183,186,188),anchor='mt')
+            x+=width+gap
+        pos+=count;y+=height+48+gap
+    title,tf=fit_text(draw,recipe.get('title','Photographs together'),3680,76)
+    explanation,ef=fit_text(draw,recipe.get('explanation',''),3680,46)
+    draw.text((3760,1900),title,font=tf,fill=(247,241,226),anchor='rt')
+    draw.text((3760,2010),explanation,font=ef,fill=(205,211,214),anchor='rt')
+    canvas.save(output,quality=93)

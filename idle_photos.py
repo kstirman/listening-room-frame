@@ -72,7 +72,9 @@ def load(config):
                 day = ''
             photos.append({'path': image, 'key': relative.as_posix(),
                            'date': day,
-                           'caption': caption(row)})
+                           'caption': caption(row), 'content_key':row.get('content_key'),
+                           'file':relative.as_posix(),
+                           **({'theme':row['theme']} if isinstance(row.get('theme'),dict) else {})})
         return photos
     except (OSError, ValueError, TypeError):
         return []

@@ -512,3 +512,33 @@ durations and complete credit strings; any mismatch rejects the entire correctio
 Only work, movement, composer, conductor, orchestra and sourced composition-date
 fields may change. Original titles and timings remain intact. Keep researched
 corrections private; this repository contains only generic logic and synthetic tests.
+
+
+### Evolving photo montages
+
+Optional offline themes use an existing private analysis SQLite database. Set
+`photo_themes_enabled: true`, `photo_analysis_file` to its absolute path, and
+`photo_timezone` to your IANA timezone. The analysis database needs
+`photo_analysis(content_key, analysis_json)` and `photo_tags(content_key, category, value)`;
+visual image kind and local difference hash come from the analysis JSON. This feature
+performs no model calls. Missing analysis falls back to ordinary photo rotation.
+
+The bundled 60 generic recipes have readable connection captions. Membership refreshes
+when analysis or recipes change, while current album membership and exclusions are
+checked again before showing a collage. Calendar recipes use source capture dates;
+model place guesses never become verified locations. Initial preparation follows the
+normal bounded queue, favoring distinct dates, lower display counts and the last five
+years (a soft 60% selection preference when both age groups are available).
+
+After five ordinary photo displays, a six-photo montage can reuse previously displayed
+images that share a theme. Theme/family cooldowns and pair counts discourage repetition.
+A 28-photo retrospective becomes available after enough unique recent photographs have
+actually appeared. Both layouts reuse cached images; neither initiates 28 downloads.
+The cache byte budget still applies, so history availability can delay a collage.
+The default 20-second photo interval and playback-resume checks are unchanged.
+
+`photo-themes.sqlite3` in the private stream directory stores recipe membership,
+confirmed-display counts, pair counts and the last 28 ordinary photos. Prefetches
+never increment views. Counts begin when this feature is enabled. A durable bounded
+receipt list lets the background worker retry failed history writes without double
+counting. No display history or photo analysis belongs in the public repository.

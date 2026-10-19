@@ -633,16 +633,22 @@ class Bridge:
         now = time.monotonic()
         if self.state.get('view') == 'photo' and now < self.next_photo and now - self.last_tv_check < 30:
             return
+        themes = getattr(self.photo_stream, 'themes', None) if self.photo_stream and self.config.get('photo_themes_enabled') else None
+        presentation = None
+        if themes:
+            try:presentation = themes.presentation(self.state)
+            except Exception:
+                LOG.warning('Photo theme presentation unavailable')
         photos = self.photo_stream.available() if self.photo_stream else []
         if not photos:
             photos = idle_photos.load(self.config)
         if self.photo_stream and photos:
             fresh = [p for p in photos if p['key'] not in self.state.get('photo_recent', [])]
-            if not fresh:
+            if not fresh and not presentation:
                 # Hold the current card while the worker prepares fresh choices.
                 return
             photos = fresh
-        if not photos:
+        if not photos and not presentation:
             self.restore()
             return
         tv = self.television()
@@ -666,21 +672,28 @@ class Bridge:
                 self.save()
             output = self.root / 'idle-photo.jpg'
             # A broken cache entry cannot trap the rotation or overwrite TV art.
-            excluded = set()
-            for _ in range(min(len(photos), 5)):
-                index = idle_photos.choose(photos, self.state, excluded)
-                excluded.add(index)
-                try:
-                    group = idle_photos.portrait_group(photos, index, self.state)
-                    if len(group) > 1:
-                        layouts.photo_panels([photos[i] for i in group], output)
-                    else:
-                        layouts.photo(photos[index]['path'], photos[index]['caption'], output)
-                    break
-                except (OSError, ValueError):
-                    LOG.warning('Skipping unreadable cached photo')
+            if presentation:
+                photos = presentation['photos']
+                group = list(range(len(photos)));index = 0
+                layouts.photo_montage(photos, presentation['recipe'], output, presentation['layout'])
             else:
-                self.save()
+                excluded = set()
+                for _ in range(min(len(photos), 5)):
+                    index = idle_photos.choose(photos, self.state, excluded)
+                    excluded.add(index)
+                    try:
+                        group = idle_photos.portrait_group(photos, index, self.state)
+                        if len(group) > 1:
+                            layouts.photo_panels([photos[i] for i in group], output)
+                        else:
+                            layouts.photo(photos[index]['path'], photos[index]['caption'], output)
+                        break
+                    except (OSError, ValueError):
+                        LOG.warning('Skipping unreadable cached photo')
+                else:
+                    self.save()
+                    return
+            if themes and len(themes.eligible([photos[i] for i in group], themes.data()[2])) != len(group):
                 return
             self.phase = 'photo-upload'
             content = tv.upload(str(output), matte='none')
@@ -698,6 +711,14 @@ class Bridge:
             for sibling in group[1:]:
                 idle_photos.remember(photos, sibling, self.state)
             idle_photos.remember(photos, index, self.state)
+            if themes:
+                receipt = dict(id=content, photos=[{k:v for k,v in photos[i].items() if k!='path'} for i in group],
+                               presentation={k:v for k,v in presentation.items() if k!='photos'} if presentation else None)
+                self.state['photo_receipts'] = (self.state.get('photo_receipts', []) + [receipt])[-32:]
+                try:
+                    themes.record(content, receipt['photos'], receipt['presentation'])
+                except Exception as error:
+                    LOG.warning('Photo display receipt deferred: %s', type(error).__name__)
             self.state.update(photo_image=content, view='photo')
             self.next_photo = time.monotonic() + idle_photos.interval(self.config)
             self.save()

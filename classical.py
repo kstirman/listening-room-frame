@@ -187,7 +187,7 @@ def catalog(tracks):
     work,_,section=parts(row)
     row.update(work=work,movementName=section,part_group=True)
   start=end
- return interrupted_works(disc_continuations(ordered))
+ return variation_cycles(interrupted_works(disc_continuations(ordered)))
 
 
 def interrupted_works(ordered):
@@ -269,4 +269,41 @@ def disc_continuations(ordered):
   if valid and n==1 and row.get('catalog_heading') and own==row['catalog_heading']:
    group=[(key,row)];heading=own;identity=ident
  finish()
+ return ordered
+
+
+def variation_cycles(ordered):
+ """Keep explicitly headed introduction/theme/variation/finale sequences together.
+
+ Require a theme, consecutive variations from one, timed parts and consistent
+ composer plus credited conductor/ensemble. Reject missing/repeated variations,
+ arbitrary intervening songs, conflicting headings and alternate performances.
+ """
+ entries=list(ordered.items());start=0
+ while start<len(entries):
+  row=entries[start][1];heading=row.get('catalog_heading');disc=row.get('catalog_disc')
+  end=start+1
+  while heading and end<len(entries) and (entries[end][1].get('catalog_heading'),entries[end][1].get('catalog_disc'))==(heading,disc):end+=1
+  group=entries[start:end];start=end
+  if not heading or len(group)<3:continue
+  details=[normalize(r) or {} for _,r in group]
+  identities={(d.get('composer'),d.get('conductor',''),d.get('orchestra','')) for d in details}
+  if len(identities)!=1:continue
+  composer,conductor,orchestra=next(iter(identities))
+  if not composer or not (conductor or orchestra) or not all(timing.seconds(r.get('duration_seconds')) for _,r in group):continue
+  titles=[r.get('title','') for _,r in group];phase='start';numbers=[];valid=True
+  for title in titles:
+   if phase=='start' and re.fullmatch(r'Introduction(?:[ :.(].*)?',title,re.I):phase='intro';continue
+   if phase in ('start','intro') and re.match(r'^(?:Theme|Thema)(?:$|[ :.(])',title,re.I):phase='theme';continue
+   match=re.match(r'^Variation\s+(\d+|[IVXLCDM]+)(?=$|[ .:;(])',title,re.I)
+   if phase in ('theme','variation') and match:
+    token=match[1].upper();n=timing.number({'title':token+'. Variation'})
+    if n!=len(numbers)+1:valid=False;break
+    numbers.append(n);phase='variation';continue
+   if phase=='variation' and re.match(r'^(?:Finale|Coda)(?:$|[ :.(])',title,re.I):phase='end';continue
+   valid=False;break
+  if not valid or len(numbers)<2:continue
+  suffix=' ('+composer+')';work=heading[:-len(suffix)] if heading.endswith(suffix) else heading
+  scope='variation-cycle:'+group[0][0]
+  for (_,r),title in zip(group,titles):r.update(work=work,movementName=title,work_scope=scope,part_group=True)
  return ordered

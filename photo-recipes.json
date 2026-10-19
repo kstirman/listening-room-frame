@@ -1,0 +1,903 @@
+[
+  {
+    "id": "recipe-01",
+    "title": "A little red goes a long way",
+    "family": "color",
+    "explanation": "Different scenes connected by a visible red accent.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bred\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-02",
+    "title": "Out of the blue",
+    "family": "color",
+    "explanation": "Blue finds a different role in each picture.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bblue\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-03",
+    "title": "The green room",
+    "family": "color",
+    "explanation": "Green across clothing, objects and scenery.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bgreen\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-04",
+    "title": "Yellow makes an entrance",
+    "family": "color",
+    "explanation": "A yellow element links otherwise different scenes.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\byellow\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-05",
+    "title": "Pink keeps turning up",
+    "family": "color",
+    "explanation": "Pink appearing across different dates and settings.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bpink\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-06",
+    "title": "Red, meet blue",
+    "family": "color",
+    "explanation": "Two recurring colors share each frame.",
+    "clauses": [
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bred\\b"
+      },
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bblue\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-07",
+    "title": "Color against the cold",
+    "family": "contrast",
+    "explanation": "Bright clothing or accents against snow.",
+    "clauses": [
+      {
+        "categories": [
+          "terrain",
+          "scene"
+        ],
+        "pattern": "\\bsnow|\\bski"
+      },
+      {
+        "categories": [
+          "color"
+        ],
+        "pattern": "\\bred\\b|\\byellow\\b|\\borange\\b|\\bpink\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-08",
+    "title": "Warm company, cool surroundings",
+    "family": "contrast",
+    "explanation": "People pictured with water or snow.",
+    "clauses": [
+      {
+        "categories": [
+          "subject"
+        ],
+        "pattern": "\\bpeople\\b|\\bperson\\b|\\bchild|\\badult|\\bgroup\\b"
+      },
+      {
+        "categories": [
+          "terrain"
+        ],
+        "pattern": "\\bsnow|\\bocean\\b|\\bsea\\b|\\blake\\b|\\bwater\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-09",
+    "title": "Stripe club",
+    "family": "pattern",
+    "explanation": "Stripes recurring in clothing, furnishings or architecture.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern"
+        ],
+        "pattern": "strip"
+      }
+    ]
+  },
+  {
+    "id": "recipe-10",
+    "title": "Around and around",
+    "family": "pattern",
+    "explanation": "Circles recur in everyday objects and arrangements.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern",
+          "theme",
+          "composition"
+        ],
+        "pattern": "\\bcircl|\\bcircular|\\bround shapes|\\brings\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-11",
+    "title": "Repeat after me",
+    "family": "pattern",
+    "explanation": "Rows, grids and repeated shapes give different scenes a rhythm.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern",
+          "composition"
+        ],
+        "pattern": "repeat|\\brows\\b|\\bgrid"
+      }
+    ]
+  },
+  {
+    "id": "recipe-12",
+    "title": "Taking sides",
+    "family": "pattern",
+    "explanation": "Diagonal lines running through otherwise different scenes.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "diagonal"
+      }
+    ]
+  },
+  {
+    "id": "recipe-13",
+    "title": "Grid expectations",
+    "family": "pattern",
+    "explanation": "Grids and checker patterns across surfaces and structures.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern",
+          "architecture"
+        ],
+        "pattern": "grid|checker"
+      }
+    ]
+  },
+  {
+    "id": "recipe-14",
+    "title": "Wood you look at that",
+    "family": "pattern",
+    "explanation": "Wood grain and wooden surfaces tie the pictures together.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern"
+        ],
+        "pattern": "wood grain"
+      }
+    ]
+  },
+  {
+    "id": "recipe-15",
+    "title": "Flowers in unexpected places",
+    "family": "pattern",
+    "explanation": "Floral patterns on fabric and objects.",
+    "clauses": [
+      {
+        "categories": [
+          "pattern"
+        ],
+        "pattern": "floral|flower pattern"
+      }
+    ]
+  },
+  {
+    "id": "recipe-16",
+    "title": "Look through here",
+    "family": "geometry",
+    "explanation": "Doorways, windows and arches frame the view.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "frame.within|framing.*(?:door|window|arch)|(?:door|window|arch).*fram"
+      }
+    ]
+  },
+  {
+    "id": "recipe-17",
+    "title": "Upwardly mobile",
+    "family": "geometry",
+    "explanation": "Steps, stairs and ladders as recurring structures.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture",
+          "object"
+        ],
+        "pattern": "\\bstair|\\bstep|\\bladder"
+      }
+    ]
+  },
+  {
+    "id": "recipe-18",
+    "title": "The long view",
+    "family": "geometry",
+    "explanation": "Paths and lines draw the eye into the distance.",
+    "clauses": [
+      {
+        "categories": [
+          "composition"
+        ],
+        "pattern": "leading lines|vanishing point|receding|path.*distance"
+      }
+    ]
+  },
+  {
+    "id": "recipe-19",
+    "title": "Room to breathe",
+    "family": "geometry",
+    "explanation": "Open sky or negative space around the subject.",
+    "clauses": [
+      {
+        "categories": [
+          "composition"
+        ],
+        "pattern": "negative space|open sky|expanse of sky|large sky"
+      }
+    ]
+  },
+  {
+    "id": "recipe-20",
+    "title": "Small in the scheme of things",
+    "family": "geometry",
+    "explanation": "Scale contrasts between subjects and their surroundings.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "scale contrast|small (?:figure|person|people)|tiny (?:figure|person)"
+      }
+    ]
+  },
+  {
+    "id": "recipe-21",
+    "title": "Layer upon layer",
+    "family": "geometry",
+    "explanation": "Foreground and background share the storytelling.",
+    "clauses": [
+      {
+        "categories": [
+          "composition"
+        ],
+        "pattern": "layer|foreground.background"
+      }
+    ]
+  },
+  {
+    "id": "recipe-22",
+    "title": "Hands have the floor",
+    "family": "gesture",
+    "explanation": "Hands are busy making, handling or demonstrating something.",
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "gesture",
+          "activity"
+        ],
+        "pattern": "hands at work|mixing|stirring|strumming|kneading|playing (?:guitar|piano)|hand.*control"
+      }
+    ]
+  },
+  {
+    "id": "recipe-23",
+    "title": "Up in arms",
+    "family": "gesture",
+    "explanation": "Arms or hands held overhead.",
+    "clauses": [
+      {
+        "categories": [
+          "gesture",
+          "theme"
+        ],
+        "pattern": "arms?.*(?:raised|overhead)|hands?.*(?:raised|overhead)|raised (?:arms|hands)"
+      }
+    ]
+  },
+  {
+    "id": "recipe-24",
+    "title": "A little support",
+    "family": "gesture",
+    "explanation": "Cradling, carrying and supporting another subject.",
+    "clauses": [
+      {
+        "categories": [
+          "interaction",
+          "activity"
+        ],
+        "pattern": "cradl|holding (?:a |an )?(?:baby|child|infant)|carrying (?:a |an )?(?:child|baby)|supporting.*(?:child|baby|infant)"
+      }
+    ]
+  },
+  {
+    "id": "recipe-25",
+    "title": "Shoulder season",
+    "family": "gesture",
+    "explanation": "Arms around shoulders, across different times of year.",
+    "clauses": [
+      {
+        "categories": [
+          "interaction",
+          "gesture",
+          "theme"
+        ],
+        "pattern": "arms?.*(?:around|across).*shoulder|arms around shoulders"
+      }
+    ]
+  },
+  {
+    "id": "recipe-26",
+    "title": "Heads together",
+    "family": "gesture",
+    "explanation": "Heads leaning together or touching.",
+    "clauses": [
+      {
+        "categories": [
+          "interaction",
+          "theme"
+        ],
+        "pattern": "heads?.*(?:together|touching)|leaning.*heads"
+      }
+    ]
+  },
+  {
+    "id": "recipe-27",
+    "title": "Point taken",
+    "family": "gesture",
+    "explanation": "Pointing gestures in different settings.",
+    "clauses": [
+      {
+        "categories": [
+          "gesture",
+          "activity"
+        ],
+        "pattern": "\\bpointing\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-28",
+    "title": "Thumbs up, years apart",
+    "family": "gesture",
+    "explanation": "A recurring visible thumbs-up gesture.",
+    "clauses": [
+      {
+        "categories": [
+          "gesture",
+          "theme"
+        ],
+        "pattern": "thumbs?.up"
+      }
+    ]
+  },
+  {
+    "id": "recipe-29",
+    "title": "Gravity, briefly optional",
+    "family": "motion",
+    "explanation": "Jumps and moments with feet off the ground.",
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "activity"
+        ],
+        "pattern": "feet leaving the ground|\\bjumping\\b|\\bleaping\\b|\\bairborne\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-30",
+    "title": "Going places",
+    "family": "motion",
+    "explanation": "Walking and running through different settings.",
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "\\bwalking\\b|\\brunning\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-31",
+    "title": "Making a splash",
+    "family": "motion",
+    "explanation": "Swimming and splashing in water.",
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "\\bswimming\\b|\\bsplashing\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-32",
+    "title": "Hang in there",
+    "family": "motion",
+    "explanation": "Climbing and holding onto climbing structures.",
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "sport"
+        ],
+        "pattern": "\\bclimbing\\b|bouldering"
+      }
+    ]
+  },
+  {
+    "id": "recipe-33",
+    "title": "Wheels in motion",
+    "family": "motion",
+    "explanation": "Bicycles, scooters and other wheeled activities.",
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "sport"
+        ],
+        "pattern": "cycling|riding.*(?:bike|bicycle|scooter)|skateboard"
+      }
+    ]
+  },
+  {
+    "id": "recipe-34",
+    "title": "Taking a seat",
+    "family": "everyday",
+    "explanation": "Seated moments across different settings and years.",
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "\\bsitting\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-35",
+    "title": "Pull up a chair",
+    "family": "everyday",
+    "explanation": "People gathered around tables.",
+    "clauses": [
+      {
+        "categories": [
+          "interaction",
+          "activity"
+        ],
+        "pattern": "(?:sharing|sitting|gathered|seated).*table"
+      }
+    ]
+  },
+  {
+    "id": "recipe-36",
+    "title": "Before the first bite",
+    "family": "everyday",
+    "explanation": "Food being held, served or prepared.",
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "holding.*(?:food|sandwich|pizza|ice cream)|serving|preparing food|cooking|mixing|stirring"
+      }
+    ]
+  },
+  {
+    "id": "recipe-37",
+    "title": "Page turners",
+    "family": "everyday",
+    "explanation": "Books and visible reading activities.",
+    "clauses": [
+      {
+        "categories": [
+          "activity"
+        ],
+        "pattern": "\\breading\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-38",
+    "title": "Making music visible",
+    "family": "everyday",
+    "explanation": "Instruments and visible music-making.",
+    "clauses": [
+      {
+        "categories": [
+          "activity",
+          "object"
+        ],
+        "pattern": "playing.*(?:guitar|piano|violin|drum)|\\bguitar\\b|\\bpiano\\b|\\bviolin\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-39",
+    "title": "A toast to the ordinary",
+    "family": "everyday",
+    "explanation": "Glasses and cups recurring around shared tables.",
+    "clauses": [
+      {
+        "categories": [
+          "object"
+        ],
+        "pattern": "\\bglasses\\b|\\bcups\\b|\\bmugs\\b"
+      },
+      {
+        "categories": [
+          "scene"
+        ],
+        "pattern": "dining|restaurant|kitchen|cafe"
+      }
+    ]
+  },
+  {
+    "id": "recipe-40",
+    "title": "Best supporting dog",
+    "family": "animals",
+    "explanation": "Dogs appearing across different scenes and years.",
+    "clauses": [
+      {
+        "categories": [
+          "animal"
+        ],
+        "pattern": "\\bdog\\b|\\bdogs\\b|\\bpuppy\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-41",
+    "title": "Horse power",
+    "family": "animals",
+    "explanation": "Horses and ponies across the collection.",
+    "clauses": [
+      {
+        "categories": [
+          "animal"
+        ],
+        "pattern": "\\bhorse|\\bpony|\\bponies"
+      }
+    ]
+  },
+  {
+    "id": "recipe-42",
+    "title": "Animal encounters",
+    "family": "animals",
+    "explanation": "Animals beyond the recurring dogs.",
+    "clauses": [
+      {
+        "categories": [
+          "animal"
+        ],
+        "pattern": "\\bhorse|\\bpony|\\bgoat|\\bcat\\b|\\bbird|\\bfish|\\bduck"
+      }
+    ]
+  },
+  {
+    "id": "recipe-43",
+    "title": "Dogs and company",
+    "family": "animals",
+    "explanation": "People and dogs sharing a frame.",
+    "clauses": [
+      {
+        "categories": [
+          "animal"
+        ],
+        "pattern": "\\bdog\\b|\\bdogs\\b|\\bpuppy\\b"
+      },
+      {
+        "categories": [
+          "subject"
+        ],
+        "pattern": "\\bperson\\b|\\bpeople\\b|\\bchild|\\badult"
+      }
+    ]
+  },
+  {
+    "id": "recipe-44",
+    "title": "Snow business",
+    "family": "setting",
+    "explanation": "Snow and snowy settings from different dates.",
+    "clauses": [
+      {
+        "categories": [
+          "terrain"
+        ],
+        "pattern": "\\bsnow"
+      }
+    ]
+  },
+  {
+    "id": "recipe-45",
+    "title": "At the water’s edge",
+    "family": "setting",
+    "explanation": "Shorelines, beaches and waterside settings.",
+    "clauses": [
+      {
+        "categories": [
+          "scene",
+          "terrain"
+        ],
+        "pattern": "\\bbeach\\b|shore|coast|lakeside|riverside"
+      }
+    ]
+  },
+  {
+    "id": "recipe-46",
+    "title": "Under the trees",
+    "family": "setting",
+    "explanation": "Trees and wooded settings recurring across dates.",
+    "clauses": [
+      {
+        "categories": [
+          "terrain",
+          "scene"
+        ],
+        "pattern": "\\btrees\\b|forest|woodland"
+      }
+    ]
+  },
+  {
+    "id": "recipe-47",
+    "title": "Garden variety",
+    "family": "setting",
+    "explanation": "Gardens and planted spaces.",
+    "clauses": [
+      {
+        "categories": [
+          "scene"
+        ],
+        "pattern": "\\bgarden\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-48",
+    "title": "The kitchen keeps calling",
+    "family": "setting",
+    "explanation": "Different dates, the recurring kitchen setting.",
+    "clauses": [
+      {
+        "categories": [
+          "scene"
+        ],
+        "pattern": "\\bkitchen\\b"
+      }
+    ]
+  },
+  {
+    "id": "recipe-49",
+    "title": "Windows on the world",
+    "family": "architecture",
+    "explanation": "Windows and window shapes across buildings.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture"
+        ],
+        "pattern": "\\bwindow"
+      }
+    ]
+  },
+  {
+    "id": "recipe-50",
+    "title": "Grand entrances",
+    "family": "architecture",
+    "explanation": "Doors, doorways and entrance structures.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture"
+        ],
+        "pattern": "\\bdoor|entrance"
+      }
+    ]
+  },
+  {
+    "id": "recipe-51",
+    "title": "Under an arch",
+    "family": "architecture",
+    "explanation": "Arches and arched structures in different settings.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture"
+        ],
+        "pattern": "\\barch"
+      }
+    ]
+  },
+  {
+    "id": "recipe-52",
+    "title": "Column inches",
+    "family": "architecture",
+    "explanation": "Columns and pillars create repeating verticals.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture"
+        ],
+        "pattern": "\\bcolumn|\\bpillar"
+      }
+    ]
+  },
+  {
+    "id": "recipe-53",
+    "title": "Ceiling fans",
+    "family": "architecture",
+    "explanation": "Ceilings and overhead structures worth looking up at.",
+    "clauses": [
+      {
+        "categories": [
+          "architecture"
+        ],
+        "pattern": "ceiling|vault|dome"
+      }
+    ]
+  },
+  {
+    "id": "recipe-54",
+    "title": "Mirror, mirror",
+    "family": "optics",
+    "explanation": "Reflections and mirrored elements.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "reflection|mirror"
+      }
+    ]
+  },
+  {
+    "id": "recipe-55",
+    "title": "In silhouette",
+    "family": "optics",
+    "explanation": "Silhouettes and backlit outlines.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "silhouette|backlit"
+      }
+    ]
+  },
+  {
+    "id": "recipe-56",
+    "title": "Shadow play",
+    "family": "optics",
+    "explanation": "Distinct shadows link different scenes.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "theme"
+        ],
+        "pattern": "\\bshadow"
+      }
+    ]
+  },
+  {
+    "id": "recipe-57",
+    "title": "Face time",
+    "family": "framing",
+    "explanation": "Close portraits with faces filling the image.",
+    "clauses": [
+      {
+        "categories": [
+          "theme",
+          "composition"
+        ],
+        "pattern": "faces? filling the frame|close.up (?:face|portrait)|tight (?:face|portrait)"
+      }
+    ]
+  },
+  {
+    "id": "recipe-58",
+    "title": "The bigger picture",
+    "family": "framing",
+    "explanation": "Wide views with a small main subject.",
+    "clauses": [
+      {
+        "categories": [
+          "composition"
+        ],
+        "pattern": "wide.*(?:landscape|view)|small.*(?:figure|subject).*landscape"
+      }
+    ]
+  },
+  {
+    "id": "recipe-59",
+    "title": "Look up",
+    "family": "framing",
+    "explanation": "Upward viewpoints and looking-up gestures.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "gesture"
+        ],
+        "pattern": "looking up|upward view|low.angle"
+      }
+    ]
+  },
+  {
+    "id": "recipe-60",
+    "title": "Look down",
+    "family": "framing",
+    "explanation": "Downward viewpoints and looking-down gestures.",
+    "clauses": [
+      {
+        "categories": [
+          "composition",
+          "gesture"
+        ],
+        "pattern": "looking down|overhead view|high.angle"
+      }
+    ]
+  }
+]

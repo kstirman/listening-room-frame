@@ -384,7 +384,8 @@ class Bridge:
             catalog_status = 'matched'
         notes = {}
         if self.config.get('liner_notes_enabled', True):
-            notes = liner_notes.extract(enriched)
+            notes = liner_notes.from_credits(enriched.get('credits', ''))
+            notes.update(liner_notes.extract(enriched))
             notes.update(liner_notes.lookup_data(metadata, self.music_catalog.document('liner', {}) or {}))
             notes.update(liner_notes.lookup(metadata, self.config))
         details = classical.normalize(enriched)

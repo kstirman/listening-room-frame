@@ -131,3 +131,15 @@ class SharedCatalogTests(unittest.TestCase):
             second=Bridge(config,tmp);second.album_page=Mock(side_effect=AssertionError('No fetch'))
             self.assertEqual(second.details(META)['composition']['index'],1)
             second.album_page.assert_not_called()
+
+    def test_legacy_saved_raw_credits_enrich_without_refetch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            b=Bridge({},tmp)
+            row={'title':'A Song','duration_seconds':180,'genre':'Jazz',
+                 'credits':'A Writer, Composer - A Player, Piano'}
+            b.music_catalog.save(('example cycle','example choir'),[{'2':row}])
+            b.auto_catalog.get=Mock(side_effect=AssertionError('No fetch'))
+            d=b.details(dict(META,title='A Song',genre='Jazz'))
+            self.assertEqual(d['liner_notes']['songwriters'],'A Writer')
+            self.assertEqual(d['liner_notes']['personnel'][0]['role'],'Piano')
+            b.auto_catalog.get.assert_not_called()

@@ -533,7 +533,10 @@ years (a soft 60% selection preference when both age groups are available).
 After five ordinary photo displays, a six-photo montage can reuse previously displayed
 images that share a theme. Theme/family cooldowns and pair counts discourage repetition.
 A 28-photo retrospective becomes available after enough unique recent photographs have
-actually appeared. Both layouts reuse cached images; neither initiates 28 downloads.
+actually appeared. The retrospective fills the screen with justified rows, narrow seams,
+minimal aspect-ratio cropping and a lower-right caption overlay. Individual date labels
+remain on ordinary photos and smaller galleries. Both layouts reuse cached images;
+neither initiates 28 downloads.
 The cache byte budget still applies, so history availability can delay a collage.
 The default 20-second photo interval and playback-resume checks are unchanged.
 

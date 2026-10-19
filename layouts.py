@@ -295,9 +295,71 @@ def photo_panels(photos, output):
     canvas.save(output, quality=95)
 
 
+def mosaic_boxes(ratios, width=3840, height=2160, gap=6):
+    """Justified edge-to-edge rows, choosing proportions that minimize cropping."""
+    from functools import lru_cache
+    @lru_cache(None)
+    def partitions(n,k):
+        if not k:return [()] if n==0 else []
+        return [(a,)+tail for a in range(2,min(10,n)+1)
+                if 2*(k-1)<=n-a<=10*(k-1) for tail in partitions(n-a,k-1)]
+    best=None
+    for nr in ([4,5] if len(ratios)>16 else [2,3] if len(ratios)>=6 else [1]):
+        for sizes in partitions(len(ratios),nr):
+            pos=0;natural=[]
+            for size in sizes:
+                natural.append((width-gap*(size-1))/sum(ratios[pos:pos+size]));pos+=size
+            factor=(height-gap*(nr-1))/sum(natural)
+            # Prefer little cropping and keep every row large enough to read.
+            score=abs(math.log(factor))+.12*(max(natural)-min(natural))/(sum(natural)/nr)
+            if best is None or score<best[0]:best=(score,sizes,natural,factor)
+    if best is None:raise ValueError('Unsupported mosaic size')
+    _,sizes,natural,factor=best;boxes=[];pos=0;y=0
+    for index,(size,h) in enumerate(zip(sizes,natural)):
+        bottom=height if index==len(sizes)-1 else y+round(h*factor)
+        usable=width-gap*(size-1);total=sum(ratios[pos:pos+size]);used=0;x=0
+        for j in range(size):
+            used+=ratios[pos+j]
+            right=width if j==size-1 else round(usable*used/total)+gap*j
+            boxes.append((x,y,right,bottom));x=right+gap
+        pos+=size;y=bottom+gap
+    return boxes
+
+
+def photo_mosaic(photos, recipe, output):
+    """One full-screen collage with tight seams and a local caption overlay."""
+    ratios=[]
+    for row in photos:
+        with Image.open(row['path']) as image:
+            w,h=image.size
+            if image.getexif().get(274) in (5,6,7,8):w,h=h,w
+            ratios.append(w/h)
+    canvas=Image.new('RGB',(3840,2160),(17,20,23))
+    for row,(x,y,right,bottom) in zip(photos,mosaic_boxes(ratios)):
+        with Image.open(row['path']) as source:
+            picture=ImageOps.exif_transpose(source).convert('RGB')
+            tile=ImageOps.fit(picture,(right-x,bottom-y),Image.Resampling.LANCZOS,centering=(.5,.42))
+            canvas.paste(tile,(x,y))
+    draw=ImageDraw.Draw(canvas)
+    title,tf=fit_text(draw,recipe.get('title','Photographs together'),3000,76)
+    explanation,ef=fit_text(draw,recipe.get('explanation',''),3000,46)
+    # Feathered shading stays behind the words; no separate footer or margins.
+    text_width=max(draw.textlength(title,font=tf),draw.textlength(explanation,font=ef))
+    mask=Image.new('L',(384,216),0);pixels=mask.load();left=max(0,(3760-text_width-180)/10)
+    for y in range(180,216):
+        for x in range(int(left),384):
+            pixels[x,y]=round(205*min(1,(y-180)/18)*min(1,(x-left)/18))
+    shade=Image.new('RGBA',canvas.size,(0,0,0,0));shade.putalpha(mask.resize(canvas.size,Image.Resampling.BILINEAR))
+    canvas=Image.alpha_composite(canvas.convert('RGBA'),shade).convert('RGB');draw=ImageDraw.Draw(canvas)
+    draw.text((3760,1940),title,font=tf,fill='white',anchor='rt',stroke_width=1,stroke_fill=(25,25,25))
+    draw.text((3760,2045),explanation,font=ef,fill='white',anchor='rt',stroke_width=1,stroke_fill=(25,25,25))
+    canvas.save(output,quality=93)
+
+
 def photo_montage(photos, recipe, output, layout='gallery'):
-    """Uncropped recent photographs with an explicit, readable connection."""
+    """Recent photographs with an explicit connection and a full-bleed mosaic."""
     if not 2<=len(photos)<=28:raise ValueError('Montage needs 2–28 photos')
+    if layout=='mosaic':return photo_mosaic(photos,recipe,output)
     canvas=Image.new('RGB',(3840,2160),(17,20,23));draw=ImageDraw.Draw(canvas)
     from functools import lru_cache
     count=len(photos);gap=16;top=24;bottom=1850;ratios=[]

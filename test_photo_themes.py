@@ -88,11 +88,26 @@ class ThemeTests(unittest.TestCase):
   self.p.clock=lambda:1792368000+32*86400
   self.assertIsNone(self.p.presentation({}))
  def test_no_history_means_no_montage(self):self.assertIsNone(self.p.presentation({}))
- def test_layout_variants_uncropped_and_4k(self):
+ def test_layout_variants_are_4k(self):
   photos=[self.photo(i) for i in range(28)]
   for kind,count in [('gallery',6),('pairs',6),('timeline',6),('mosaic',28)]:
    target=self.root/(kind+'.jpg');layouts.photo_montage(photos[:count],dict(title='Synthetic connection',explanation='A factual explanation.'),target,kind)
    with Image.open(target) as image:self.assertEqual(image.size,(3840,2160))
+ def test_mosaic_tiles_fill_frame_with_only_narrow_seams(self):
+  for ratios in [[.65,1.5,1,2]*7,[.66]*28,[1.5]*28]:
+   boxes=layouts.mosaic_boxes(ratios);self.assertEqual(len(boxes),28)
+   self.assertEqual(min(b[0] for b in boxes),0);self.assertEqual(min(b[1] for b in boxes),0)
+   self.assertEqual(max(b[2] for b in boxes),3840);self.assertEqual(max(b[3] for b in boxes),2160)
+   self.assertGreater(sum((r-x)*(b-y) for x,y,r,b in boxes),3840*2160*.97)
+   for i,(x,y,r,b) in enumerate(boxes):
+    self.assertTrue(0<=x<r<=3840 and 0<=y<b<=2160)
+    for xx,yy,rr,bb in boxes[:i]:self.assertTrue(r<=xx or rr<=x or b<=yy or bb<=y)
+ def test_mosaic_image_reaches_all_four_corners(self):
+  target=self.root/'full-bleed.png'
+  layouts.photo_montage([self.photo(i) for i in range(28)],dict(title='',explanation=''),target,'mosaic')
+  with Image.open(target) as image:
+   for point in [(0,0),(3839,0),(0,2159),(3839,2159)]:
+    r,g,b=image.getpixel(point);self.assertGreater(b,r+15);self.assertGreater(b,g+15)
  def test_six_landscapes_use_screen_width_in_pair_layout(self):
   target=self.root/'pairs.jpg'
   layouts.photo_montage([self.photo(i) for i in range(6)],dict(title='Shared color',explanation='Synthetic photos.'),target,'pairs')

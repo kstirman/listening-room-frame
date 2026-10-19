@@ -2,7 +2,7 @@
 import argparse
 from contextlib import closing, contextmanager
 import hashlib
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
@@ -11,6 +11,7 @@ import re
 import secrets
 import sqlite3
 import time
+import threading
 from urllib.parse import urlparse
 from PIL import Image, ImageOps
 import layouts
@@ -182,9 +183,11 @@ class Lab:
         return dict(snapshot=self.fingerprint,created=self.snapshot['created'],photos=len(self.snapshot['photos']),recipes=[dict(id=k,title=v['title'],count=len(self.snapshot['members'][k])) for k,v in self.snapshot['recipes'].items()],saved=saved)
 
 
-def serve(root,port=8767):
+def make_server(root,port=8767):
     lab=Lab(root);token=secrets.token_urlsafe(24)
+    render_lock=threading.Lock()
     class Handler(BaseHTTPRequestHandler):
+        timeout=15
         def log_message(self,*args):pass
         def allowed(self):
             host=self.headers.get('Host','');origin=self.headers.get('Origin')
@@ -217,12 +220,23 @@ def serve(root,port=8767):
                 if self.path=='/api/case':
                     seed=data.get('seed',1)
                     if not isinstance(seed,int) or not 0<=seed<2**31:raise ValueError('Invalid seed')
-                    return self.reply(lab.create_case(data['recipe'],seed))
+                    if not render_lock.acquire(blocking=False):
+                        return self.reply({'error':'A comparison is already rendering. Try again shortly.'},status=409)
+                    try:case=lab.create_case(data['recipe'],seed)
+                    finally:render_lock.release()
+                    return self.reply(case)
                 if self.path=='/api/review':return self.reply(lab.review(data))
                 return self.reply({'error':'Not found'},status=404)
             except (ValueError,KeyError,TypeError) as error:return self.reply({'error':str(error)},status=400)
-    print(f'Photo review: http://127.0.0.1:{port}',flush=True)
-    HTTPServer(('127.0.0.1',port),Handler).serve_forever()
+    server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
+    port=server.server_port
+    return server
+
+
+def serve(root,port=8767):
+    with make_server(root,port) as server:
+        print(f'Photo review: http://127.0.0.1:{server.server_port}',flush=True)
+        server.serve_forever()
 
 
 def main():

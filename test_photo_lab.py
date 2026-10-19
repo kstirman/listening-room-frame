@@ -1,7 +1,9 @@
 import hashlib,json,sqlite3,tempfile,unittest
 from pathlib import Path
 from PIL import Image
-from photo_lab import Lab,evidence,choose_random,export
+from photo_lab import Lab,evidence,choose_random,export,make_server
+import socket,threading,http.client,re
+from unittest.mock import patch
 
 class LabTests(unittest.TestCase):
  def setUp(self):
@@ -58,6 +60,30 @@ class LabTests(unittest.TestCase):
    raw=(Path(other)/'snapshot.json').read_text();snap=json.loads(raw)
    self.assertLessEqual(result['photos'],8);self.assertNotIn(excluded,snap['photos']);self.assertNotIn('private-secret',raw);self.assertNotIn('url',raw)
   self.assertTrue(all(p.read_bytes()==b for p,b in before.items()))
+ def test_idle_connections_and_rendering_do_not_block_other_requests(self):
+  server=make_server(self.root,0);port=server.server_port
+  runner=threading.Thread(target=server.serve_forever,daemon=True);runner.start()
+  idle=socket.create_connection(('127.0.0.1',port));started=threading.Event();release=threading.Event();result=[]
+  def request(method,path,body=None,headers=None):
+   conn=http.client.HTTPConnection('127.0.0.1',port,timeout=2)
+   try:
+    conn.request(method,path,body,headers or {});response=conn.getresponse();return response.status,response.read()
+   finally:conn.close()
+  def slow_case(*args):
+   started.set();release.wait(5);return {'id':'synthetic'}
+  try:
+   status,html=request('GET','/');self.assertEqual(status,200)
+   token=re.search(rb"const token='([^']+)'",html).group(1).decode()
+   headers={'X-Lab-Token':token,'Content-Type':'application/json'};body=json.dumps({'recipe':'dogs','seed':1})
+   with patch.object(Lab,'create_case',slow_case):
+    worker=threading.Thread(target=lambda:result.append(request('POST','/api/case',body,headers)),daemon=True);worker.start()
+    self.assertTrue(started.wait(2))
+    self.assertEqual(request('GET','/api/state')[0],200)
+    self.assertEqual(request('POST','/api/case',body,headers)[0],409)
+    self.assertEqual(request('POST','/api/case',body)[0],403)
+    release.set();worker.join(3);self.assertEqual(result[0][0],200)
+  finally:
+   release.set();idle.close();server.shutdown();server.server_close();runner.join(2)
  def test_unknown_recipe_rejected(self):
   with self.assertRaises(ValueError):self.lab.create_case('invented',1)
 

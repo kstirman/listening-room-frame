@@ -27,6 +27,34 @@ def canonical(value):
     return ' '.join(unicodedata.normalize('NFKC', str(value or '')).casefold().split())
 
 
+def artwork_edition(url):
+    """A Qobuz cover is a candidate identity, never a track match by itself."""
+    try:
+        u = urlparse(url or '')
+        if u.scheme != 'https' or u.netloc != 'static.qobuz.com':return None
+        m = re.fullmatch(r'/images/covers/[A-Za-z0-9]{2}/[A-Za-z0-9]{2}/([A-Za-z0-9]{1,64})_[0-9]{2,4}\.jpg', u.path)
+        return m[1] if m else None
+    except (ValueError, TypeError):return None
+
+
+def edition_rows(page, album, edition):
+    # Independently corroborate the candidate with source SKU and cover identity.
+    # Exact source identity handles different credited artist strings without
+    # fuzzy artist matching. Exact track title/duration are still checked below.
+    products = [r for r in records(page) if r.get('@type') == 'Product']
+    for p in products:
+        images = p.get('image', [])
+        if isinstance(images, str):images = [images]
+        if (canonical(p.get('name')) == canonical(album) and p.get('sku') == edition
+                and isinstance(images, list) and any(isinstance(i, str) and artwork_edition(i) == edition for i in images)):
+            rows = parsed_rows(page, edition)
+            for row in rows.values():
+                row['_edition_verified'] = edition
+                row['_identity_album'] = canonical(album)
+            return rows
+    return None
+
+
 def records(page):
     for text in re.findall(r'<script\b[^>]*type=[\"\']application/ld\+json[\"\'][^>]*>(.*?)</script>', page, re.S | re.I):
         try:
@@ -127,7 +155,13 @@ class Resolver:
         self.lock = threading.Lock()
         self.busy = False
 
-    def discover(self, album, artist):
+    def discover(self, album, artist, edition=None):
+        if edition:
+            try:
+                rows = edition_rows(self.get('album/-/' + edition), album, edition)
+                if rows:return [rows], 'ready'
+            except Exception:
+                pass  # Retain bounded discovery when the candidate is unavailable.
         albums = []
         seen = set()
         # Generic titles can hide the requested performer beyond the first
@@ -150,11 +184,14 @@ class Resolver:
 
     def _run(self, key, album, artist, keep_ready=False):
         try:
-            albums, status = self.discover(album, artist)
+            edition = key[2] if len(key) > 2 else None
+            albums, status = self.discover(album, artist, edition)
         except Exception:
             albums, status = [], 'unavailable'
         if self.disk and status == 'ready':
-            self.disk.save(key, albums)
+            if edition and all(r.get('_edition_verified') == edition for r in albums[0].values()):
+                self.disk.put_edition(edition, albums[0], album, artist)
+            else:self.disk.save(key[:2], albums)
         with self.lock:
             if keep_ready and status != 'ready' and key in self.cache and self.cache[key][2] == 'ready':
                 # A transient outage must not discard a usable saved recording.
@@ -169,13 +206,23 @@ class Resolver:
         album, artist = metadata.get('album'), metadata.get('artist')
         if not album or not artist or not metadata.get('title') or not timing.seconds(metadata.get('duration_seconds')):
             return None, 'insufficient'
-        key = (canonical(album), canonical(artist))
+        edition = artwork_edition(metadata.get('albumArtURI'))
+        key = (canonical(album), canonical(artist)) + ((edition,) if edition else ())
         with self.lock:
             cached = self.cache.get(key)
             if cached and time.monotonic() - cached[0] < (1800 if cached[2] == 'ready' else 300):
                 _, albums, status = cached
             else:
-                saved = self.disk.load(key) if self.disk else None
+                saved = self.disk.load(key[:2]) if self.disk and not edition else None
+                if self.disk and edition:
+                    rows = self.disk.edition(edition)
+                    if rows and all(r.get('_edition_verified') == edition and r.get('_identity_album') == key[0] for r in rows.values()):
+                        saved = ([rows], False)
+                    if not saved:
+                        prior = self.disk.load(key[:2])
+                        if prior:
+                            matching = [rows for rows in prior[0] if rows and all(r.get('_catalog_album_id') == edition for r in rows.values())]
+                            if matching:saved = (matching, prior[1])
                 if saved:
                     albums, stale = saved
                     status = 'ready'

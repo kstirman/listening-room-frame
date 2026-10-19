@@ -67,3 +67,15 @@ class Tests(unittest.TestCase):
    self.assertIsNone(auto_catalog.album_rows(page,'Opera (Edition Two)','Wrong Artist'))
   search='<script type="application/ld+json">{"@type":"MusicAlbum","name":"Opera","url":"https://www.qobuz.com/us-en/album/opera/id123"}</script>'
   self.assertEqual(auto_catalog.candidates(search,'Opera (Edition Two)'),['id123'])
+
+ def test_reviewed_recording_date_reaches_standard_card(self):
+  with tempfile.TemporaryDirectory() as t:
+   b=Bridge({},t);meta={'title':'Song','artist':'Artist','album':'Album','duration_seconds':245,'releaseDate':'2020'}
+   with patch('liner_notes.lookup',return_value={'recordingDate':'1960-12-16'}):
+    result=b.details(meta)
+    self.assertEqual(result['recording_year'],'1960')
+    self.assertNotIn('release_year',result)
+    b.detail_cache.clear();b.config['liner_notes_enabled']=False
+    result=b.details(meta)
+    self.assertNotIn('recording_year',result)
+    self.assertEqual(result['release_year'],'2020')

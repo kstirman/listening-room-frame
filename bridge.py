@@ -373,7 +373,7 @@ class Bridge:
         duration = timing.seconds(enriched.get('duration_seconds'))
         if duration: details = dict(details or {}, duration_seconds=duration)
         if work_timing: details = dict(details or {}, composition=work_timing)
-        date_fields = dates.extract(enriched, details)
+        date_fields = dates.extract(dict(enriched, **notes), details)
         if date_fields:
             details = dict(details or {}, **date_fields)
         # Preserve reviewed local captions even when renderer/file tags are blank.

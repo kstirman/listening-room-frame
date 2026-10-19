@@ -60,7 +60,11 @@ def composition(tracks, current):
     """
     if current not in tracks:
         return None
-    entries = list(tracks.items())
+    # Catalog normalization marks only validated, explicitly labeled audience
+    # interludes. They remain album tracks but are not musical movements.
+    if tracks[current].get('non_music_interlude'):
+        return None
+    entries = [(key,row) for key,row in tracks.items() if not row.get('non_music_interlude')]
     pos = next(i for i, (key, _) in enumerate(entries) if key == current)
     target = entries[pos][1]
     work = target.get('work')

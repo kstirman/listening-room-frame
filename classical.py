@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 def tempo_section(title):
  """Recognize bare tempo directions, never independent named compositions."""
  starts = r'(?:largo|larghetto|lento|adagio|adagietto|andante|andantino|moderato|allegretto|allegro|vivace|vivacissimo|presto|prestissimo|grave|grandioso|recitativo)'
- words = starts + r'|assai|molto|poco|più|piu|meno|non|troppo|sostenuto|energico|maestoso|cantabile|espressivo|con|brio|fuoco|moto|e|ma|dolce|tranquillo|agitato|appassionato|quasi|tempo|primo|giusto|rubato|sempre|ben|marcato|ritenuto'
+ words = starts + r'|assai|molto|poco|più|piu|meno|non|troppo|sostenuto|energico|maestoso|cantabile|espressivo|con|brio|fuoco|moto|mosso|e|ma|dolce|tranquillo|agitato|appassionato|quasi|tempo|primo|giusto|rubato|sempre|ben|marcato|ritenuto'
  return bool(re.fullmatch(starts + r'(?:[\s.,;:()–—-]+(?:' + words + r'))*[\s.,;:()–—-]*', title, re.I))
 
 
@@ -16,12 +16,14 @@ class Tracks(HTMLParser):
  def __init__(self):
   super().__init__();self.tracks={};self.track=None;self.capture=None;self.parts=[]
   self.depth=0;self.work='';self.group_depth=None;self.work_scope=0
+  self.catalog_heading='';self.catalog_disc=0
  def handle_starttag(self,tag,attrs):
   if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
   self.depth+=1
   a=dict(attrs);classes=a.get('class','').split()
   if a.get('id')=='playerTracks':
    self.work='';self.track=None;self.group_depth=self.depth
+   self.catalog_heading='';self.catalog_disc=0
   if a.get('data-track'):
    self.track=a['data-track'];self.tracks.setdefault(self.track,{})
    try:
@@ -32,6 +34,7 @@ class Tracks(HTMLParser):
    self.work_scope+=1
    if 'data-disk' in a:
     self.work=''
+    self.catalog_heading='';self.catalog_disc+=1
    else:
     self.capture=(self.depth,'work');self.parts=[]
   elif self.track and 'track__item--duration' in classes:
@@ -44,12 +47,14 @@ class Tracks(HTMLParser):
   if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
   if self.capture and self.depth==self.capture[0]:
    value=' '.join(''.join(self.parts).split());key=self.capture[1]
-   if key=='work':self.work=value
+   if key=='work':self.work=value;self.catalog_heading=value
    elif key=='duration':
     duration=timing.seconds(value)
     if duration:self.tracks[self.track]['duration_seconds']=duration
    elif key=='title':
     self.tracks[self.track][key]=value
+    if self.catalog_heading:
+     self.tracks[self.track].update(catalog_heading=self.catalog_heading,catalog_disc=self.catalog_disc)
     # Explicit headings can describe numbered movements or bare tempo sections.
     # An independent title ends inheritance, so later tracks cannot borrow it.
     if self.work and (timing.number({'title':value}) or tempo_section(value)):
@@ -171,4 +176,48 @@ def catalog(tracks):
     work,_,section=parts(row)
     row.update(work=work,movementName=section,part_group=True)
   start=end
+ return interrupted_works(ordered)
+
+
+def interrupted_works(ordered):
+ """Bridge explicitly labeled audience interludes in a numbered performance.
+
+ Require a source work heading, identical credited performers/composer, same
+ disc and consecutive movement numbers starting at one. Never infer a work
+ from an album name, skip arbitrary tracks, or join repeated performances.
+ """
+ group=[];gaps=[];identity=None;saw_gap=False
+ def finish():
+  if saw_gap and len(group)>=2:
+   scope='interrupted:'+group[0][0]
+   for _,row,work,movement in group:
+    row.update(work=work,movementName=movement,work_scope=scope,part_group=True)
+   for row in gaps:row['non_music_interlude']=True
+ def nonmusic(row):
+  return (re.fullmatch(r"(?:Audience(?:'s)? noise|Applause)(?: - .+)?",row.get('title',''),re.I)
+          and timing.seconds(row.get('duration_seconds'))
+          and timing.seconds(row['duration_seconds'])<=120
+          and row.get('composer','').casefold() in {'','na not applicable','not applicable','unknown'})
+ for key,row in ordered.items():
+  if nonmusic(row):
+   if group:gaps.append(row);saw_gap=True
+   continue
+  composer=row.get('composer','');heading=row.get('catalog_heading','')
+  suffix=' ('+composer+')'
+  if composer and heading.endswith(suffix):heading=heading[:-len(suffix)]
+  movement=row.get('title','');work=heading
+  # Some catalogs put the movement's number/name in the work heading and
+  # expose only its tempo as the track title. Preserve that original title.
+  split=re.fullmatch(r'(.+), ((?:[IVX]+|\d+)\. .+)',heading)
+  if split and tempo_section(movement):
+   work=split[1];movement=split[2]+': '+movement
+  n=timing.number({'title':movement})
+  ident=(work,composer,row.get('credits',''),row.get('catalog_disc'))
+  valid=bool(heading and composer and row.get('credits') and n and timing.seconds(row.get('duration_seconds')))
+  if valid and group and ident==identity and n==len(group)+1:
+   group.append((key,row,work,movement));continue
+  finish();group=[];gaps=[];identity=None;saw_gap=False
+  if valid and n==1:
+   group=[(key,row,work,movement)];identity=ident
+ finish()
  return ordered

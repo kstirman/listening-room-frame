@@ -251,8 +251,16 @@ explicit work-and-numbered-movement titles, consecutive numbering from one,
 and lengths for every listed movement. Adjacent classical tracks sharing an exact
 `Work: section` prefix and composer can also form unnumbered parts, labeled
 “Part X of Y.” Standalone colon titles, pop titles, duplicate sections and gaps
-in explicitly numbered movements do not qualify. Repeated headings remain separate.
-Incomplete or ambiguous groups show duration alone. Numbered movement groups
+in explicitly numbered movements do not qualify. Repeated headings remain separate,
+except that explicitly labeled audience-noise/applause tracks of at most two
+minutes can be bridged within one numbered performance. This requires an exact
+work heading, identical composer/performer credits, the same disc, valid lengths,
+and consecutive movement numbers starting at one. Audience tracks are omitted
+from movement counts and musical durations; other intervening tracks stop grouping.
+Incomplete or ambiguous groups omit the movement strip. A unique album/artist/
+track/duration match still supplies the track's verified credits, including for
+single-track works; an ambiguous recording match supplies no borrowed credits.
+Numbered movement groups
 are limited to16; explicitly named part groups can contain up to128 tracks.
 Numbered pieces such as “No. 2 in C Major” inherit an explicit work heading
 and show “Part X of Y,” including sets of up to128 pieces. Opus groups and

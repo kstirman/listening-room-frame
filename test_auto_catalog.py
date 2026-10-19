@@ -47,9 +47,23 @@ class AutomaticCatalogTests(unittest.TestCase):
 
     def test_wrong_duration_and_missing_parts(self):
         for p,meta,status in [(page(),dict(META,duration_seconds=200),'track_mismatch'),
-                              (page(missing=True),dict(META,title='Cycle: No. 1, Part',duration_seconds=120),'incomplete')]:
+                              (page(missing=True),dict(META,title='Cycle: No. 1, Part',duration_seconds=120),'matched_track')]:
             r=Resolver(Mock(side_effect=[search(),p]));r.lookup(meta);self.wait(r)
             self.assertEqual(r.lookup(meta)[1],status)
+
+    def test_unique_standalone_track_keeps_credits_without_a_movement_strip(self):
+        p=page().replace('Cycle: No. 1, Part','Standalone Tone Poem')
+        p=p.replace('Example Composer, Composer','Example Composer, Composer - Example Conductor, Conductor - Example Orchestra, Orchestra')
+        meta=dict(META,title='Standalone Tone Poem',duration_seconds=120)
+        resolver=Resolver(Mock(side_effect=[search(),p]));resolver.lookup(meta);self.wait(resolver)
+        match,status=resolver.lookup(meta)
+        self.assertEqual(status,'matched_track');self.assertIsNone(match[1])
+        with tempfile.TemporaryDirectory() as root:
+            b=Bridge({},root);b.auto_catalog=resolver
+            d=b.details(meta)
+            self.assertEqual(d['conductor'],'Example Conductor')
+            self.assertEqual(d['orchestra'],'Example Orchestra')
+            self.assertNotIn('composition',d)
 
     def test_failure_negative_cache_and_candidate_limit(self):
         for get,status in [(Mock(side_effect=RuntimeError()),'unavailable'),

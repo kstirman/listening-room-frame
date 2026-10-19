@@ -142,4 +142,7 @@ class Resolver:
         if not selected:
             return None, 'track_mismatch'
         row, context = selected[0]
-        return ((row, context), 'matched') if context else (None, 'incomplete')
+        # A unique recording/track match still supplies authoritative credits
+        # when it is a standalone work or has incomplete movement timing.
+        # Only the strip depends on a complete composition group.
+        return (row, context), 'matched' if context else 'matched_track'

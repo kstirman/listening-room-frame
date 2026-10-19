@@ -16,14 +16,14 @@ class Tracks(HTMLParser):
  def __init__(self):
   super().__init__();self.tracks={};self.track=None;self.capture=None;self.parts=[]
   self.depth=0;self.work='';self.group_depth=None;self.work_scope=0
-  self.catalog_heading='';self.catalog_disc=0
+  self.catalog_heading='';self.catalog_disc=0;self.continuation_heading=''
  def handle_starttag(self,tag,attrs):
   if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
   self.depth+=1
   a=dict(attrs);classes=a.get('class','').split()
   if a.get('id')=='playerTracks':
    self.work='';self.track=None;self.group_depth=self.depth
-   self.catalog_heading='';self.catalog_disc=0
+   self.catalog_heading='';self.catalog_disc=0;self.continuation_heading=''
   if a.get('data-track'):
    self.track=a['data-track'];self.tracks.setdefault(self.track,{})
    try:
@@ -34,6 +34,7 @@ class Tracks(HTMLParser):
    self.work_scope+=1
    if 'data-disk' in a:
     self.work=''
+    self.continuation_heading=self.catalog_heading or self.continuation_heading
     self.catalog_heading='';self.catalog_disc+=1
    else:
     self.capture=(self.depth,'work');self.parts=[]
@@ -47,12 +48,16 @@ class Tracks(HTMLParser):
   if tag in {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}:return
   if self.capture and self.depth==self.capture[0]:
    value=' '.join(''.join(self.parts).split());key=self.capture[1]
-   if key=='work':self.work=value;self.catalog_heading=value
+   if key=='work':
+    self.work=value;self.catalog_heading=value;self.continuation_heading=''
    elif key=='duration':
     duration=timing.seconds(value)
     if duration:self.tracks[self.track]['duration_seconds']=duration
    elif key=='title':
     self.tracks[self.track][key]=value
+    self.tracks[self.track]['catalog_disc']=self.catalog_disc
+    if self.continuation_heading:
+     self.tracks[self.track]['continuation_heading']=self.continuation_heading
     if self.catalog_heading:
      self.tracks[self.track].update(catalog_heading=self.catalog_heading,catalog_disc=self.catalog_disc)
     # Explicit headings can describe numbered movements or bare tempo sections.
@@ -182,7 +187,7 @@ def catalog(tracks):
     work,_,section=parts(row)
     row.update(work=work,movementName=section,part_group=True)
   start=end
- return interrupted_works(ordered)
+ return interrupted_works(disc_continuations(ordered))
 
 
 def interrupted_works(ordered):
@@ -225,5 +230,43 @@ def interrupted_works(ordered):
   finish();group=[];gaps=[];identity=None;saw_gap=False
   if valid and n==1:
    group=[(key,row,work,movement)];identity=ident
+ finish()
+ return ordered
+
+
+def disc_continuations(ordered):
+ """Continue an explicitly headed, consecutively numbered performance across discs.
+
+ A disc marker is only a candidate: retain exact composer and credited ensemble
+ or conductor, require every next movement, and reject a conflicting work title.
+ """
+ group=[];heading='';identity=None;crossed=False
+ def finish():
+  if crossed and len(group)>=2:
+   scope='disc-continuation:'+group[0][0]
+   for _,row in group:
+    row.update(work=heading,movementName=row.get('movementName') or row['title'],
+               work_scope=scope,part_group=True)
+ def bare(work,composer):
+  suffix=' ('+composer+')'
+  return work[:-len(suffix)] if composer and work.endswith(suffix) else work
+ for key,row in ordered.items():
+  details=normalize(row) or {};composer=details.get('composer','')
+  ident=(composer,details.get('conductor',''),details.get('orchestra',''))
+  n=timing.number(row);disc=row.get('catalog_disc')
+  credit_ok=bool(composer and any(ident[1:]))
+  valid=bool(credit_ok and n and timing.seconds(row.get('duration_seconds')))
+  candidate=row.get('continuation_heading','')
+  own=row.get('work','')
+  if (valid and group and ident==identity and n==len(group)+1
+      and disc is not None and group[-1][1].get('catalog_disc') is not None
+      and 0<=disc-group[-1][1]['catalog_disc']<=1
+      and ((candidate==heading) or (disc==group[-1][1]['catalog_disc'] and row.get('catalog_heading')==heading))
+      and (not own or bare(own,composer)==bare(heading,composer))):
+   crossed |= disc!=group[-1][1]['catalog_disc']
+   group.append((key,row));continue
+  finish();group=[];crossed=False
+  if valid and n==1 and row.get('catalog_heading') and own==row['catalog_heading']:
+   group=[(key,row)];heading=own;identity=ident
  finish()
  return ordered

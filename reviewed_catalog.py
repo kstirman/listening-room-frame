@@ -38,7 +38,10 @@ def select(metadata, rows):
     duration = timing.seconds(metadata.get('duration_seconds'))
     if not title or not duration:
         return None
-    selected = [key for key, row in rows.items() if row.get('title') == title and
+    # Catalog HTML collapses whitespace while renderer metadata can preserve it.
+    # Keep words, punctuation, case and edition suffixes exact.
+    def title_key(value):return ' '.join(str(value or '').split())
+    selected = [key for key, row in rows.items() if title_key(row.get('title')) == title_key(title) and
                 timing.seconds(row.get('duration_seconds')) and
                 abs(timing.seconds(row['duration_seconds']) - duration) <= 1]
     if len(selected) != 1:

@@ -139,7 +139,7 @@ def track_timing(draw, details, x, y, width):
     index = group.get('index', -1)
     valid = (2 <= len(lengths) <= 128 and isinstance(index, int) and
              0 <= index < len(lengths) and all(timing.seconds(v) for v in lengths))
-    kind = 'Part' if group.get('label') == 'Part' else 'Movement'
+    kind = group.get('label') if group.get('label') in {'Part','Excerpt'} else 'Movement'
     heading = ('%s %d of %d' % (kind, index + 1, len(lengths))) if valid else ''
     heading = ' · '.join(filter(None, [heading, duration]))
     if not heading:
@@ -157,7 +157,7 @@ def track_timing(draw, details, x, y, width):
         cursor = end + gap
     # Fixed legend cells keep short movements readable without distorting bars.
     if len(lengths) > 16:
-        draw.text((x, y+115), 'Whole work · '+timing.label(sum(lengths)), font=font(32), fill=(164,163,151), anchor='lt')
+        draw.text((x, y+115), ('Selected excerpts · ' if kind=='Excerpt' else 'Whole work · ')+timing.label(sum(lengths)), font=font(32), fill=(164,163,151), anchor='lt')
         return
     columns = 4
     for i, length in enumerate(lengths):

@@ -496,3 +496,19 @@ Portrait photo rotation groups two or three eligible prepared portraits side by 
 Photo captions retain the verified date and available location, adding completed years elapsed. “On this day” is used only for a matching month/day in a prior year, using the display server’s local calendar date. Future dates receive no elapsed-time claim.
 
 Streaming photo rotation never replays a photo in the persisted recent100entry history merely to fill a portrait group. If the prepared queue has no unseen choices, it holds the current display while the worker refills. Portrait companions must also be unseen; a single portrait is preferred to an immediate repeat.
+
+
+Catalog matching ignores whitespace-only title differences while preserving words,
+punctuation, edition suffixes, duration tolerance and ambiguity checks. Disc
+boundaries can continue an explicitly headed work when movements remain
+consecutive and credited composer/conductor/ensemble agree. Lettered numbered
+sections retain their source heading. Verified releases labeled “excerpts” show
+an excerpt selection and its duration, never label that selection the whole work.
+
+For genuinely incomplete source credits, an optional private `catalog-repairs.json`
+beside the service source is imported into the shared SQLite catalog. Each reviewed
+correction requires a source URL, exact album and ordered track IDs, original titles,
+durations and complete credit strings; any mismatch rejects the entire correction.
+Only work, movement, composer, conductor, orchestra and sourced composition-date
+fields may change. Original titles and timings remain intact. Keep researched
+corrections private; this repository contains only generic logic and synthetic tests.

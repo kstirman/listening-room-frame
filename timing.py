@@ -42,12 +42,12 @@ def number(track):
     numbered_piece = re.match(r'^No\.\s*(\d+)(?=[\s,.:]|$)', title)
     if numbered_piece:
         return int(numbered_piece[1])
-    match = re.match(r'^(\d+|[IVXLCDM]+)[.,:]\s*', title)
+    match = re.match(r'^(\d+[A-Za-z]?|[IVXLCDM]+)[.,:]\s*', title)
     if not match:
         return None
     text = match[1]
-    if text.isdigit():
-        return int(text)
+    if text[0].isdigit():
+        return int(re.match(r'\d+', text)[0])
     romans = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI']
     return romans.index(text) + 1 if text in romans else None
 
@@ -88,6 +88,14 @@ def composition(tracks, current):
     numbered_pieces = all(re.match(r'^No\.\s*\d+(?=[\s,.:]|$)',
                                    item.get('movementName') or item.get('title', ''))
                           for item in group)
+    # A source-identified excerpts release is a selection, never a whole work.
+    albums = {item.get('_identity_album', '') for item in group}
+    if (len(albums) == 1 and re.search(r'\bexcerpts\b', next(iter(albums)), re.I)
+            and len({item.get('_edition_verified') for item in group}) == 1
+            and all(item.get('part_group') and item.get('_edition_verified') for item in group)
+            and all(n is not None for n in numbers)
+            and all(a < b for a,b in zip(numbers,numbers[1:]))):
+        return {'index': pos-left, 'durations': lengths, 'label': 'Excerpt'}
     if numbers == list(range(1, len(group) + 1)) and (len(group) <= 16 or numbered_pieces):
         result = {'index': pos - left, 'durations': lengths}
         if numbered_pieces:

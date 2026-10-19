@@ -22,6 +22,7 @@ import local_match
 import timing
 import classical
 import dates
+import catalog_repairs
 
 LOG = logging.getLogger(__name__)
 SCHEMA = '''
@@ -60,6 +61,7 @@ def available(default=None):
 class Store:
     def dated_rows(self, rows):
         registry=self.document('work_dates',[]) or []
+        rows=catalog_repairs.apply(rows,self.document('catalog_repairs',[]) or [])
         return {k:dates.catalog_fields(v,registry) for k,v in classical.catalog(rows).items()}
 
     def __init__(self, path):
@@ -153,6 +155,7 @@ class Store:
 
     def sync_documents(self, config, source_dir):
         paths = {'liner':config.get('liner_notes_file'),
+                 'catalog_repairs':Path(source_dir)/'catalog-repairs.json',
                  'work_dates':Path(source_dir)/'work-dates.json',
                  'recording_dates':Path(source_dir)/'recording-dates.json'}
         with self.connect() as db:

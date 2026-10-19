@@ -523,7 +523,10 @@ Optional offline themes use an existing private analysis SQLite database. Set
 visual image kind and local difference hash come from the analysis JSON. This feature
 performs no model calls. Missing analysis falls back to ordinary photo rotation.
 
-The bundled 60 generic recipes have readable connection captions. Membership refreshes
+The bundled 16 story recipes focus on visible actions and recurring rituals, rather
+than broad color or composition tags. Each story requires six distinct capture dates
+spanning at least three years. Retired recipes cannot return through old photo annotations.
+Membership refreshes
 when analysis or recipes change, while current album membership and exclusions are
 checked again before showing a collage. Calendar recipes use source capture dates;
 model place guesses never become verified locations. Initial preparation follows the

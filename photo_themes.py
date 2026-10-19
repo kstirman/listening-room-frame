@@ -95,7 +95,7 @@ class Planner:
         candidates={}
         for ident,r in recipes.items():
             keys=members[ident]&fresh;days={by[k].get('date') for k in keys}-{None,''}
-            if len(keys)>=8 and len(days)>=6:candidates[ident]=keys
+            if len(keys)>=8 and len(days)>=6 and len({d[:4] for d in days})>=r.get('min_years',1):candidates[ident]=keys
         # Keep a theme until seven of its newly prepared photos really reached TV.
         if plan and plan.get('remaining',0)>0 and plan['id'] in candidates:chosen=plan['id']
         elif candidates:
@@ -156,22 +156,22 @@ class Planner:
         if len(rows)<6:return None
         last_themes=[r for r,_,l in recent if l!='single'][:8]
         options=[]
-        for r in rows:
-            theme=r.get('theme')
-            if theme and theme.get('family')!='calendar':recipes.setdefault(theme['id'],theme);members.setdefault(theme['id'],{p['content_key'] for p in rows if p.get('theme',{}).get('id')==theme['id']})
         today=self.today()
         for ident,segment,title,caption in [('on-this-day',slice(5,None),'On this day','The same calendar date, in different years.'),('this-month',slice(5,7),today.strftime('%B')+' through the years','The same month, seen across different years.')]:
             recipes[ident]=dict(id=ident,title=title,family='calendar',explanation=caption)
             members[ident]={r['content_key'] for r in rows if r.get('date','')[segment]==today.isoformat()[segment] and r['date']<today.isoformat()}
         for ident,recipe in recipes.items():
             if ident in last_themes:continue
-            selected=[];days=set()
-            for r in sorted(rows,key=lambda r:exposures.get(r['content_key'],(0,0))[0]):
-                if r['content_key'] not in members.get(ident,set()) or r.get('date') in days:continue
+            selected=[];days=set();years=set()
+            remaining=[r for r in rows if r['content_key'] in members.get(ident,set())]
+            while remaining and len(selected)<6:
+                remaining.sort(key=lambda r:(r.get('date','')[:4] in years,exposures.get(r['content_key'],(0,0))[0]))
+                r=remaining.pop(0)
+                if r.get('date') in days:continue
                 if any(similar(features.get(r['content_key'],('',''))[1],features.get(x['content_key'],('',''))[1]) for x in selected):continue
-                selected.append(r);days.add(r.get('date'))
-                if len(selected)==6:break
-            if len(selected)==6 and (('years' not in (recipe['title']+' '+recipe['explanation']) and recipe['family']!='calendar') or len({p.get('date','')[:4] for p in selected})>=2):options.append((recipe,selected))
+                selected.append(r);days.add(r.get('date'));years.add(r.get('date','')[:4])
+            required=max(recipe.get('min_years',1),2 if 'years' in (recipe['title']+' '+recipe['explanation']) or recipe['family']=='calendar' else 1)
+            if len(selected)==6 and len(years-{''})>=required:options.append((recipe,selected))
         # A 28-photo retrospective reuses history; it need not invent one theme.
         if len(rows)==28 and not any(l=='mosaic' for _,_,l in recent[:16]):
             return dict(recipe=dict(id='recent-28',family='retrospective',title='The last 28, together',explanation='A look back at the photographs recently on the frame.'),photos=list(reversed(rows)),layout='mosaic')

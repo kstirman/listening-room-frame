@@ -52,6 +52,28 @@ class ThemeTests(unittest.TestCase):
   for i in range(8):self.p.record(str(i),[self.photo(i)])
   before=[r['content_key'] for r in self.p.history()];show=self.p.presentation({});self.assertIsNotNone(show)
   self.p.record('montage',show['photos'],show);self.assertEqual(before,[r['content_key'] for r in self.p.history()]);self.assertIsNone(self.p.presentation({}))
+ def test_carried_dog_recipe_does_not_match_carried_child_near_dog(self):
+  import re
+  recipe=next(r for r in json.loads(Path(layouts.__file__).with_name('photo-recipes.json').read_text()) if r['id']=='story-dogsheld')
+  pattern=re.compile(recipe['clauses'][0]['pattern'],re.I)
+  self.assertIsNone(pattern.search('holding a child while a dog stands nearby'))
+  self.assertIsNone(pattern.search('holding dog leashes'))
+  self.assertTrue(pattern.search('holding a small dog'))
+  self.assertTrue(pattern.search('dog on her lap'))
+ def test_retired_recipe_cannot_return_from_old_photo_annotations(self):
+  for i in range(8):self.p.record(str(i),[self.photo(i)])
+  self.recipefile.write_text('[]');self.p.refresh()
+  self.assertIsNone(self.p.presentation({}))
+ def test_story_requires_distinct_years_and_prefers_year_diversity(self):
+  recipes=json.loads(self.recipefile.read_text());recipes[0]['min_years']=3
+  self.recipefile.write_text(json.dumps(recipes));self.p.refresh()
+  for i in range(8):
+   photo=self.photo(i);photo['date']=f'2024-03-{i+1:02}';self.p.record(str(i),[photo])
+  self.assertIsNone(self.p.presentation({}))
+  for i,year in [(6,2010),(7,2018)]:
+   photo=self.photo(i);photo['date']=f'{year}-03-{i+1:02}';self.p.record('new'+str(i),[photo])
+  show=self.p.presentation({});self.assertIsNotNone(show)
+  self.assertGreaterEqual(len({r['date'][:4] for r in show['photos']}),3)
  def test_exclusion_change_removes_historical_members(self):
   for i in range(6):self.p.record(str(i),[self.photo(i)])
   self.assertIsNotNone(self.p.presentation({}))

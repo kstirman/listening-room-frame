@@ -155,6 +155,7 @@ class Store:
 
     def sync_documents(self, config, source_dir):
         paths = {'liner':config.get('liner_notes_file'),
+                 'music_context':config.get('music_context_file'),
                  'catalog_repairs':Path(source_dir)/'catalog-repairs.json',
                  'work_dates':Path(source_dir)/'work-dates.json',
                  'recording_dates':Path(source_dir)/'recording-dates.json'}

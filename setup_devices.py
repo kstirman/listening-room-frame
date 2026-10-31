@@ -83,6 +83,12 @@ def validate_config(data):
         if not isinstance(path, str) or not path.startswith(('/', '~/')) or len(path) > 1024:
             raise ValueError('Enter the absolute Roon extension state-directory path.')
         result['roon_state_dir'] = path
+    elif source == 'spotify':
+        path = data.get('spotify_token_file', '')
+        if not isinstance(path, str) or not path.startswith(('/', '~/')) or len(path) > 1024 or '\x00' in path:
+            raise ValueError('Enter the absolute Spotify token-file path created by spotify_auth.py.')
+        result['spotify_token_file'] = path
+        result['poll_seconds'] = 5
     elif source == 'upnp':
         url = data.get('renderer_control_url', '')
         parsed = urlparse(url)
@@ -95,9 +101,9 @@ def validate_config(data):
             raise ValueError('Enter up to ten local artwork hosts.')
         result['local_art_hosts'] = [local_host(h) for h in hosts]
         # Preserve advanced local-library settings when supplied through the API.
-        for field in ('minim_control', 'library_root', 'library_resource_prefix'):
+        for field in ('minim_control', 'library_root', 'library_resource_prefix', 'music_context_file', 'liner_notes_file'):
             if field in data and isinstance(data[field], str):
                 result[field] = data[field]
     else:
-        raise ValueError('Choose Sonos, Roon or UPnP.')
+        raise ValueError('Choose Sonos, Roon, Spotify or UPnP.')
     return result

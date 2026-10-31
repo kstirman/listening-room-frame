@@ -44,7 +44,9 @@ def main():
             def observed(status, metadata):
                 observe(status, metadata)
                 write(root/'playback.json', {'transport':status,'title':metadata.get('title',''),
-                                             'artist':metadata.get('artist',''),'album':metadata.get('album',''),'updated_at':time.time()})
+                                             'artist':metadata.get('artist',''),'album':metadata.get('album',''),
+                                             'source_error':getattr(getattr(bridge,'spotify',None),'error',None),
+                                             'updated_at':time.time()})
             bridge.observe_playback = observed
             while not stopping[0] and os.getppid()==parent:
                 delay = config.get('poll_seconds',2)
@@ -75,7 +77,7 @@ def main():
                 bridge = Bridge(config,root/'preview-display')
                 status, metadata = bridge.playback()
                 if status != 'PLAYING' or not bridge.album_key(metadata):
-                    return {'message':'Play a track with artwork in the selected room, then try again.', 'prepared':False}
+                    return {'message':getattr(getattr(bridge,'spotify',None),'error',None) or 'Play a track with artwork on the selected source, then try again.', 'prepared':False}
                 details = bridge.details(metadata)
                 bridge.card(metadata,details)
                 # A one-shot preview must stay alive long enough for discovery.

@@ -22,11 +22,13 @@ import local_composition
 import library_metadata
 import auto_catalog
 import music_catalog
+import music_context
 import reviewed_catalog
 import classical
 import dates
 from roon_source import RoonSource
 from sonos_source import SonosSource
+from spotify_source import SpotifySource
 
 import requests
 from PIL import Image, ImageOps
@@ -113,10 +115,11 @@ class Bridge:
     def __init__(self, config, root):
         self.config = config
         source = config.get('source', 'upnp')
-        if source not in ('upnp', 'roon', 'sonos'):
+        if source not in ('upnp', 'roon', 'sonos', 'spotify'):
             raise ValueError('Unsupported playback source')
         self.roon = RoonSource(config['roon_state_dir']) if source == 'roon' else None
         self.sonos = SonosSource(config.get('sonos_uid')) if source == 'sonos' else None
+        self.spotify = SpotifySource(config.get('spotify_token_file')) if source == 'spotify' else None
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_file = self.root / 'state.json'
@@ -164,8 +167,8 @@ class Bridge:
 
     def playback(self):
         self._media_fingerprint = 'missing'
-        if self.roon or self.sonos:
-            status, metadata = (self.roon or self.sonos).playback()
+        if self.roon or self.sonos or self.spotify:
+            status, metadata = (self.roon or self.sonos or self.spotify).playback()
             self._media_fingerprint = metadata.get('object_id', 'missing')
             return status, metadata
         status = self.soap('GetTransportInfo').get('CurrentTransportState')
@@ -212,7 +215,7 @@ class Bridge:
 
     @staticmethod
     def album_key(metadata):
-        if metadata.get('source') in ('roon', 'sonos'):
+        if metadata.get('source') in ('roon', 'sonos', 'spotify'):
             return metadata.get('source_album_key')
         if metadata.get('album_id'):
             return 'qobuz:' + metadata['album_id']
@@ -291,6 +294,11 @@ class Bridge:
         return self.pages[album_id]
 
     def details(self, metadata):
+        if metadata.get('source') == 'spotify':
+            # Spotify's release date and artist credits do not identify recording
+            # sessions or classical roles. Never send these IDs to another catalog.
+            return {name: metadata.get(name) for name in (
+                'object_id', 'title', 'album', 'artist', 'duration_seconds', 'releaseDate', 'source_url', 'spotify_cover')}
         if metadata.get('source') in ('roon', 'sonos'):
             field = metadata['source'] + '_lines'
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
@@ -410,6 +418,10 @@ class Bridge:
             recording_registry=self.music_catalog.document('recording_dates'))
         if date_fields:
             details = dict(details or {}, **date_fields)
+        connections = music_context.lookup(dict(enriched, **(details or {})),
+            self.music_catalog.document('music_context', {}))
+        if connections:
+            details = dict(details or {}, connections=connections)
         # Preserve reviewed local captions even when renderer/file tags are blank.
         if not metadata.get('album_id'):
             captions = {'display_album': enriched.get('album'),
@@ -427,6 +439,19 @@ class Bridge:
         return details
 
     def card(self, metadata, details):
+        if metadata.get('source') == 'spotify':
+            cover = self.root / 'spotify-cover.jpg'
+            # One current cover only; Spotify content does not enter the history
+            # collage, record rack or permanent cross-provider metadata catalog.
+            identity = (metadata['source_album_key'], metadata['spotify_cover'])
+            if getattr(self, '_spotify_cover_identity', None) != identity or not cover.exists():
+                content = self.spotify.cover(metadata)
+                with Image.open(io.BytesIO(content)) as source:
+                    ImageOps.exif_transpose(source).convert('RGB').save(cover, quality=95)
+                self._spotify_cover_identity = identity
+            output = self.root / 'current-cover.jpg'
+            layouts.spotify(cover, metadata, output)
+            return output, metadata.get('album', '')
         album = self.album_key(metadata)
         entry = next((e for e in self.state['history'] if e['key'] == album), None)
         refreshed_art = (entry is not None and self.config.get('library_root')
@@ -441,7 +466,7 @@ class Bridge:
             layouts.roon(self.root / entry['cover'], metadata[metadata['source'] + '_lines'], image, duration_seconds=(details or {}).get('duration_seconds'))
         elif details and details.get('work') and entry:
             layouts.classical(self.root / entry['cover'], details, image)
-        elif entry and (details or {}).get('liner_notes'):
+        elif entry and ((details or {}).get('liner_notes') or (details or {}).get('connections')):
             title = (details or {}).get('display_album') or title
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
             layouts.liner(self.root / entry['cover'], title, artist, image, details)
@@ -553,6 +578,14 @@ class Bridge:
         self.save()
 
     def rotate(self, tv, now):
+        if self.config.get('source') == 'spotify':
+            if self.state.get('view') == 'collage' and self.state.get('album_image'):
+                self.select(tv, self.state['album_image'])
+                self.state['view'] = 'album'
+                self.collage_until = None
+                self.save()
+            self.next_collage = float('inf')
+            return
         if self.state.get('view') == 'collage':
             if self.collage_until is None or now >= self.collage_until:
                 self.select(tv, self.state['album_image'])

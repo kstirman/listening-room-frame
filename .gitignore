@@ -40,3 +40,11 @@ album-url.txt
 photo-stream/
 index.sqlite3*
 ready.json
+
+# Spotify authorization stays private; official attribution is a source asset.
+spotify-tokens.json
+spotify-state/
+!assets/spotify-logo-white.png
+
+# Reviewed musical relationships and listening context are private.
+music-context.json

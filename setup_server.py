@@ -80,7 +80,8 @@ class App:
                     'title':state.get('title','') if busy and self.operation=='run' else '',
                     'view':state.get('view',''), 'failure':self.last_failure,
                     'operation_id':self.started, 'playback':self.read('playback.json',{}),
-                    'presentation':self.read('presentation.json',{}),'recent':recent[:8],
+                    'presentation':self.read('presentation.json',{}),
+                    'recent':[] if self.config.get('source')=='spotify' else recent[:8],
                     'startup_supported':sys.platform.startswith('linux'),
                     'startup_installed':self.settings.get('startup_installed',False)}
 

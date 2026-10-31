@@ -33,11 +33,21 @@ class PreviewBridge(Bridge):
         atomic(manager/'preview.jpg',content)
         data = {'revision':revision,'prepared_at':time.time(),'confirmed_at':time.time() if confirmed else None,
                 'kind':kind,'accent':palette,'status':'confirmed' if confirmed else 'prepared',
-                'catalog_status':getattr(self, 'catalog_status', None)}
+                'catalog_status':getattr(self, 'catalog_status', None),
+                'source_url':getattr(self, 'source_url', ''),
+                'source':getattr(self, 'source', ''),
+                'prepared_title':getattr(self, 'prepared_title', ''),
+                'connections':getattr(self, 'connections', []) if kind == 'album' else [],
+                'liner_notes':getattr(self, 'liner_notes', {}) if kind == 'album' else {}}
         atomic(manager/'presentation.json',json.dumps(data).encode())
 
     def card(self, metadata, details):
         self.catalog_status = (details or {}).get('catalog_status')
+        self.connections = (details or {}).get('connections', [])
+        self.liner_notes = (details or {}).get('liner_notes', {})
+        self.source = metadata.get('source', '')
+        self.prepared_title = metadata.get('album', '')
+        self.source_url = metadata.get('source_url', '') if self.source == 'spotify' else ''
         image, title = super().card(metadata,details)
         self.publish(image)
         return image,title

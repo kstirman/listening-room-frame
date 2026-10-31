@@ -32,25 +32,120 @@ def palette(cover):
     return tuple(round(18 + component * .14) for component in color)
 
 
-def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None, track_title=''):
-    cover = Image.open(cover_path).convert('RGB')
+def sleeve(cover_path):
+    """Keep the complete original cover in a fixed, nearly full-height area."""
+    with Image.open(cover_path) as original:
+        cover = ImageOps.exif_transpose(original).convert('RGB')
     canvas = Image.new('RGB', (3840, 2160), palette(cover))
-    art = ImageOps.contain(cover, (1610, 1610), Image.Resampling.LANCZOS)
-    canvas.paste(art, ((3840-art.width)//2, 135+(1610-art.height)//2))
-    draw = ImageDraw.Draw(canvas)
-    text, f = fit_text(draw, track_title or title, 3200, 70)
-    draw.text((1920, 1835), text, font=f, fill=(242,239,232), anchor='mt')
-    text, f = fit_text(draw, artist, 3200, 48)
-    draw.text((1920, 1940), text, font=f, fill=(191,189,185), anchor='mt')
+    art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
+    canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2))
+    return canvas
+
+
+class Column:
+    def __init__(self, canvas, y=200, bottom=1880):
+        self.draw = ImageDraw.Draw(canvas)
+        self.x, self.width, self.y, self.bottom = 2250, 1490, y, bottom
+
+    def block(self, value, size=48, color=(242,235,219), lines=2, gap=28):
+        if not value:
+            return
+        face = font(size)
+        rows, line = [], ''
+        for word in str(value).split():
+            candidate = (line+' '+word).strip()
+            if line and self.draw.textlength(candidate, font=face) > self.width:
+                rows.append(line); line = word
+            else:
+                line = candidate
+        if line: rows.append(line)
+        step = round(size*1.3)
+        limit = min(lines, max(0, int((self.bottom-self.y)//step)))
+        if not limit:
+            return
+        clipped = len(rows) > limit
+        rows = rows[:limit]
+        if clipped: rows[-1] += '…'
+        for row in rows:
+            value, face = fit_text(self.draw, row, self.width, size)
+            self.draw.text((self.x, self.y), value, font=face, fill=color, anchor='lt')
+            self.y += step
+        self.y += gap
+
+
+def connection(column, details):
+    rows = details.get('connections') or []
+    if not rows:
+        return
+    row = rows[0]
+    column.block(row['label'].upper()+' · '+row['scope'], 30, (205,173,115), 1, 18)
+    column.block(row['target_title']+' · '+row['target_artist'], 46, lines=2, gap=18)
+    column.block(row['explanation'], 38, (205,202,190), 4, 20)
+    column.block('Source: '+row['source_title'], 28, (173,171,160), 1)
+
+
+def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None, track_title=''):
+    canvas = sleeve(cover_path)
+    column = Column(canvas, y=600)
+    column.block(track_title or title, 84, lines=4, gap=50)
+    column.block(artist, 56, (200,197,186), 3, 45)
     if track_title and title and track_title != title:
-        text, f = fit_text(draw, title, 3200, 38)
-        draw.text((1920, 2010), text, font=f, fill=(170,168,163), anchor='mt')
-    date_line = date_line or ('Recorded · '+recording_year if recording_year else '')
+        column.block(title, 44, (173,171,160), 3)
+    column.y, column.bottom = 1920, 2120
+    column.block(date_line or ('Recorded · '+recording_year if recording_year else ''), 36, (173,171,160), 2)
     duration = timing.label(duration_seconds)
-    date_line = ' · '.join(filter(None, [date_line, 'Track length ' + duration if duration else '']))
-    if date_line:
-        text, f = fit_text(draw, date_line, 3200, 36)
-        draw.text((1920, 2080 if track_title else 2030), text, font=f, fill=(170,168,163), anchor='mt')
+    if duration: column.block('Track length '+duration, 36, (173,171,160), 1)
+    canvas.save(output, quality=95)
+
+
+def spotify(cover_path, metadata, output):
+    """Current-track companion with an uncropped sleeve and official attribution."""
+    with Image.open(cover_path) as original:
+        cover = ImageOps.exif_transpose(original).convert('RGB')
+    canvas = Image.new('RGB', (3840, 2160), palette(cover))
+    art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
+    mask = Image.new('L', art.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, art.width-1, art.height-1), radius=8, fill=255)
+    canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2), mask)
+    draw = ImageDraw.Draw(canvas)
+    x, width, y = 2250, 1490, 390
+    with Image.open(Path(__file__).parent/'assets/spotify-logo-white.png') as original_logo:
+        logo = ImageOps.contain(original_logo.convert('RGBA'), (400, 120), Image.Resampling.LANCZOS)
+    canvas.paste(logo, (x, 110), logo)
+
+    def block(text, size, color, limit):
+        nonlocal y
+        words = str(text or '').split()
+        lines, line = [], ''
+        face = font(size)
+        for word in words:
+            candidate = (line+' '+word).strip()
+            if line and draw.textlength(candidate, font=face) > width:
+                lines.append(line); line = word
+            else:
+                line = candidate
+        if line: lines.append(line)
+        clipped = len(lines) > limit
+        lines = lines[:limit]
+        if clipped: lines[-1] += '…'
+        for line in lines:
+            fitted, face = fit_text(draw, line, width, size)
+            draw.text((x, y), fitted, font=face, fill=color, anchor='lt')
+            y += round(size*1.32)
+        y += 54
+
+    block(metadata.get('title'), 84, (244, 241, 234), 4)
+    block(metadata.get('artist'), 56, (211, 207, 195), 3)
+    block(metadata.get('album'), 46, (177, 174, 163), 3)
+    y = max(y, 1620)
+    if metadata.get('releaseDate'):
+        block('Released · '+metadata['releaseDate'], 38, (177, 174, 163), 1)
+    duration = timing.label(metadata.get('duration_seconds'))
+    if duration:
+        block('Track length · '+duration, 38, (177, 174, 163), 1)
+    # The same link is clickable in the listening console.
+    text, face = fit_text(draw, metadata['source_url'].removeprefix('https://'), width, 34)
+    draw.text((x, 2035), text, font=face, fill=(211, 207, 195), anchor='lt')
     canvas.save(output, quality=95)
 
 
@@ -76,58 +171,38 @@ def collage(history, root, output):
 
 
 def classical(cover_path, details, output):
-    cover=Image.open(cover_path).convert('RGB')
-    canvas=Image.new('RGB',(3840,2160),palette(cover))
-    has_timing=bool(details.get('duration_seconds') or details.get('composition'))
-    art=ImageOps.contain(cover,(1320,1320) if has_timing else (1420,1420),Image.Resampling.LANCZOS)
-    canvas.paste(art,(150+(1420-art.width)//2,(1800-art.height)//2 if has_timing else (2160-art.height)//2))
-    draw=ImageDraw.Draw(canvas);x=1770;y=300;width=1880
-    def block(text,size,color,maxlines=3):
-        nonlocal y
-        if not text:return
-        f=font(size);words=text.split();lines=[];line=''
-        for word in words:
-            candidate=(line+' '+word).strip()
-            if draw.textlength(candidate,font=f)>width and line:
-                lines.append(line);line=word
-            else:line=candidate
-        if line:lines.append(line)
-        if len(lines)>maxlines:
-            lines=lines[:maxlines];lines[-1]=lines[-1].rstrip(' .,')+'…'
-        for line in lines:
-            draw.text((x,y),line,font=f,fill=color,anchor='lt');y+=round(size*1.4)
-        y+=35
-    block(details.get('composer',''),68,(189,186,179),2)
+    canvas = sleeve(cover_path)
+    column = Column(canvas, y=160, bottom=1230)
+    muted = (189,186,179)
+    column.block(details.get('composer'), 56, muted, 2)
     pending = details.get('catalog_status') == 'searching'
-    block((details.get('display_album') or details.get('work','')) if pending else details.get('work',''),86,(246,243,236),3)
-    if pending:block('Looking up work and credits…',42,(175,172,166),1)
-    if details.get('composition_year'):block('Composed · '+details['composition_year'],42,(175,172,166),2)
-    block(details.get('movement') or (details.get('display_track','') if pending else ''),66,(228,224,217),4)
-    y=max(y+40,1410)
-    if details.get('conductor'):block('Conductor · '+details['conductor'],50,(200,197,190),2)
-    block(details.get('orchestra',''),50,(200,197,190),2)
-    block('; '.join(filter(None,(details.get('soloist',''),details.get('performer','')))),50,(200,197,190),2)
-    if dates.display_line(details, include_composition=False):
-        y=min(y,2040)
-        block(dates.display_line(details, include_composition=False),42,(175,172,166),1)
-    track_timing(draw, details, 150, 1810, 1420)
-    canvas.save(output,quality=95)
+    column.block((details.get('display_album') or details.get('work')) if pending else details.get('work'), 78, lines=3)
+    if pending: column.block('Looking up work and credits…', 36, muted, 1)
+    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 36, muted, 1)
+    column.block(details.get('movement') or (details.get('display_track') if pending else ''), 58, lines=3)
+    column.y, column.bottom = max(column.y, 1130), 1780
+    if details.get('connections'):
+        connection(column, details)
+    else:
+        if details.get('conductor'): column.block('Conductor · '+details['conductor'], 44, muted, 2)
+        column.block(details.get('orchestra'), 44, muted, 2)
+        column.block('; '.join(filter(None, (details.get('soloist'), details.get('performer')))), 44, muted, 2)
+    column.y, column.bottom = 1790, 1850
+    column.block(dates.display_line(details, include_composition=False), 34, muted, 1)
+    track_timing(column.draw, details, column.x, 1860, column.width)
+    canvas.save(output, quality=95)
 
 
 def roon(cover_path, lines, output, duration_seconds=None):
-    """Preserve Roon's display lines without inventing classical roles."""
-    cover = Image.open(cover_path).convert('RGB')
-    canvas = Image.new('RGB', (3840, 2160), palette(cover))
-    art = ImageOps.contain(cover, (1500, 1500), Image.Resampling.LANCZOS)
-    canvas.paste(art, ((3840-art.width)//2, 100+(1500-art.height)//2))
-    draw = ImageDraw.Draw(canvas)
-    for text, y, size, color in zip(lines, (1710, 1840, 1960), (64, 46, 44),
-                                  ((242,239,232), (191,189,185), (170,168,163))):
-        text, f = fit_text(draw, text, 3300, size)
-        draw.text((1920, y), text, font=f, fill=color, anchor='mt')
+    """Preserve provider display lines without inventing classical roles."""
+    canvas = sleeve(cover_path)
+    column = Column(canvas, y=550)
+    for value, size, color in zip(lines, (80,56,44), ((242,239,232),(200,197,186),(173,171,160))):
+        column.block(value, size, color, 4 if size == 80 else 3, 50)
     duration = timing.label(duration_seconds)
     if duration:
-        draw.text((1920, 2050), 'Track length · '+duration, font=font(36), fill=(170,168,163), anchor='mt')
+        column.y, column.bottom = 2020, 2120
+        column.block('Track length · '+duration, 36, (173,171,160), 1)
     canvas.save(output, quality=95)
 
 
@@ -167,57 +242,37 @@ def track_timing(draw, details, x, y, width):
 
 
 def liner(cover_path, title, artist, output, details):
-    """A record sleeve with bounded, track-specific liner notes."""
-    cover=Image.open(cover_path).convert('RGB')
-    canvas=Image.new('RGB',(3840,2160),palette(cover))
-    draw=ImageDraw.Draw(canvas); paper=(242,235,219); muted=(185,180,165); gold=(205,173,115)
-    art=ImageOps.contain(cover,(1570,1570),Image.Resampling.LANCZOS)
-    canvas.paste(art,(150+(1570-art.width)//2,200+(1570-art.height)//2))
-    draw.line((1840,200,1840,1935),fill=gold,width=3)
-    x=1970;width=1680;y=200
-    def block(value,size=46,color=paper,lines=2,gap=22):
-        nonlocal y
-        if not value:return
-        words=str(value).split();rows=[];line=''
-        for word in words:
-            candidate=(line+' '+word).strip()
-            if draw.textlength(candidate,font=font(size))>width and line:
-                rows.append(line);line=word
-            else:line=candidate
-        if line:rows.append(line)
-        clipped=len(rows)>lines;rows=rows[:lines]
-        if clipped:rows[-1]+='…'
-        for row in rows:
-            row,f=fit_text(draw,row,width,size)
-            draw.text((x,y),row,font=f,fill=color,anchor='lt');y+=round(size*1.28)
-        y+=gap
-    notes=details['liner_notes']
-    block('LINER NOTES',32,gold,1,34)
-    block(details.get('display_track') or title,76,paper,2,22)
-    block(artist,50,muted,1,22)
-    block(title,36,muted,2,35)
-    if details.get('composition_year'):block('Composed · '+details['composition_year'],42,gold,2,22)
-    if notes.get('personnel'):
-        block('ON THIS TRACK',30,gold,1,22)
-        for person in notes['personnel'][:6]:
-            block(person['name']+'  ·  '+person['role'],43,paper,1,16)
-        if len(notes['personnel'])>6:block('Additional credits in the reviewed notes',32,muted,1,12)
-    if notes.get('songwriters'):block('Written by  '+notes['songwriters'],37,muted,2,22)
-    # Reserve a stable bottom area; long credits never collide with session detail.
-    y=max(y,1250)
-    for name,label in [('producer','Produced by'),('engineer','Recorded / mixed by'),('recordingLocation','Sessions')]:
-        if notes.get(name) and y<1580:block(label+'  '+notes[name],34,muted,2,18)
-    if notes.get('note') and y<1770:block(notes['note'],36,paper,3,20)
-    footer=[]
-    if notes.get('recordingDate'):footer.append('Recorded '+notes['recordingDate'])
-    release=notes.get('originalReleaseDate') or notes.get('releaseDate')
-    if release:footer.append(('Originally released ' if notes.get('originalReleaseDate') else 'Released ')+release)
-    if notes.get('label'):footer.append(notes['label'])
-    text,f=fit_text(draw,'  ·  '.join(footer),3460,38)
-    draw.text((150,2010),text,font=f,fill=muted,anchor='lt')
-    duration=timing.label(details.get('duration_seconds'))
-    if duration:draw.text((150,1840),'TRACK LENGTH  '+duration,font=font(36),fill=gold,anchor='lt')
-    canvas.save(output,quality=95)
+    """Artwork leads; one sourced connection or a few track credits support it."""
+    canvas = sleeve(cover_path)
+    column = Column(canvas, y=180, bottom=1740)
+    muted = (185,180,165)
+    notes = details.get('liner_notes') or {}
+    column.block(details.get('display_track') or title, 78, lines=3, gap=35)
+    column.block(artist, 52, muted, 2)
+    if title != details.get('display_track'):
+        column.block(title, 40, muted, 2, 45)
+    if details.get('connections'):
+        connection(column, details)
+    else:
+        if notes.get('personnel'):
+            column.block('ON THIS TRACK', 30, (205,173,115), 1)
+            for person in notes['personnel'][:3]:
+                column.block(person['name']+' · '+person['role'], 42, lines=1, gap=18)
+        if notes.get('note'):
+            column.block(notes['note'], 38, lines=4)
+        elif notes.get('songwriters'):
+            column.block('Written by '+notes['songwriters'], 36, muted, 2)
+    column.y, column.bottom = 1820, 2120
+    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 34, muted, 1, 12)
+    footer = []
+    if notes.get('recordingDate'): footer.append('Recorded '+notes['recordingDate'])
+    release = notes.get('originalReleaseDate') or notes.get('releaseDate')
+    if release: footer.append(('Originally released ' if notes.get('originalReleaseDate') else 'Released ')+release)
+    if notes.get('label'): footer.append(notes['label'])
+    column.block(' · '.join(footer) or dates.display_line(details, include_composition=False), 34, muted, 2, 20)
+    duration = timing.label(details.get('duration_seconds'))
+    if duration: column.block('Track length · '+duration, 34, muted, 1)
+    canvas.save(output, quality=95)
 
 
 def photo(path, caption, output):

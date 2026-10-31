@@ -10,10 +10,10 @@ function message(text){$('message').textContent=text;$('message').hidden=!text;}
 function showNow(){ $('setup').hidden=true;$('listening').hidden=false; }
 function showSetup(){ $('setup').hidden=false;$('listening').hidden=true;step(currentStep); }
 function step(number){currentStep=Math.max(0,Math.min(4,number));document.querySelectorAll('[data-panel]').forEach(el=>el.hidden=Number(el.dataset.panel)!==currentStep);document.querySelectorAll('[data-step]').forEach(el=>{if(Number(el.dataset.step)===currentStep)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});$('back').disabled=currentStep===0;$('next').hidden=currentStep===4;$('step-count').textContent=String(currentStep+1).padStart(2,'0')+' / 05';$('next').textContent=currentStep===2?'Continue for now →':'Next →';}
-function sourceFields(){for(const source of ['sonos','roon','upnp'])$(source+'-fields').hidden=$('source').value!==source;}
+function sourceFields(){for(const source of ['sonos','roon','spotify','upnp'])$(source+'-fields').hidden=$('source').value!==source;}
 function option(select,value,label){const el=document.createElement('option');el.value=value;el.textContent=label;select.append(el);}
-function hydrate(config){for(const key of ['tv','tv_model','source','roon_state_dir','renderer_control_url'])if(config[key])$(key).value=config[key];$('local_art_hosts').value=(config.local_art_hosts||[]).join(', ');if(config.sonos_uid){option($('rooms'),config.sonos_uid,config.sonos_room_name||'Saved room · find devices to see its name');$('rooms').value=config.sonos_uid;}savedExtras=Object.fromEntries(['minim_control','library_root','library_resource_prefix'].filter(k=>k in config).map(k=>[k,config[k]]));sourceFields();}
-function choices(){return {...savedExtras,source:$('source').value,tv:$('tv').value.trim(),tv_model:$('tv_model').value.trim(),sonos_uid:$('rooms').value,sonos_room_name:$('rooms').selectedOptions[0]?.textContent||'',roon_state_dir:$('roon_state_dir').value.trim(),renderer_control_url:$('renderer_control_url').value.trim(),local_art_hosts:$('local_art_hosts').value.split(',').map(s=>s.trim()).filter(Boolean)};}
+function hydrate(config){for(const key of ['tv','tv_model','source','roon_state_dir','spotify_token_file','renderer_control_url'])if(config[key])$(key).value=config[key];$('local_art_hosts').value=(config.local_art_hosts||[]).join(', ');if(config.sonos_uid){option($('rooms'),config.sonos_uid,config.sonos_room_name||'Saved room · find devices to see its name');$('rooms').value=config.sonos_uid;}savedExtras=Object.fromEntries(['minim_control','library_root','library_resource_prefix','music_context_file','liner_notes_file'].filter(k=>k in config).map(k=>[k,config[k]]));sourceFields();}
+function choices(){return {...savedExtras,source:$('source').value,tv:$('tv').value.trim(),tv_model:$('tv_model').value.trim(),sonos_uid:$('rooms').value,sonos_room_name:$('rooms').selectedOptions[0]?.textContent||'',roon_state_dir:$('roon_state_dir').value.trim(),spotify_token_file:$('spotify_token_file').value.trim(),renderer_control_url:$('renderer_control_url').value.trim(),local_art_hosts:$('local_art_hosts').value.split(',').map(s=>s.trim()).filter(Boolean)};}
 function changed(){dirty=true;message('Your choices have changed. Save them in “Say hello” before starting.');controls(latest);}
 function controls(state){
  for(const id of ['discover','probe','save','check','test','preview','setup-preview','start','restore'])$(id).disabled=!!state.busy || (dirty&&['check','test','preview','setup-preview','start'].includes(id));
@@ -40,10 +40,34 @@ async function recent(items){
  $('recent').replaceChildren(...figures);$('recent-empty').hidden=figures.length>0;$('collection-count').textContent=figures.length?String(figures.length).padStart(2,'0')+' / RECENT COVERS':'YOUR COLLECTION STARTS HERE';
  for(const [name,url] of covers)if(!items.some(i=>i.image===name)){URL.revokeObjectURL(url);covers.delete(name);}
 }
+function musicalContext(p){
+ const root=$('music-context'),signature=JSON.stringify([p.connections,p.liner_notes,p.prepared_title]);
+ if(root.dataset.signature===signature)return;
+ root.dataset.signature=signature;
+ const cards=[];
+ for(const row of (Array.isArray(p.connections)?p.connections:[])){
+  let source;try{source=new URL(row.source_url);if(source.protocol!=='https:'||source.username||source.password)continue;}catch{continue;}
+  const article=document.createElement('article'),label=document.createElement('p'),title=document.createElement('h3'),text=document.createElement('p'),link=document.createElement('a');
+  label.className='eyebrow';label.textContent=row.label+' · '+row.scope;title.textContent=row.target_title+' — '+row.target_artist;text.textContent=row.explanation;
+  link.href=source.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent=row.source_title+' ↗';
+  article.append(label,title,text,link);cards.push(article);
+ }
+ const notes=p.liner_notes||{},credits=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Credits and session details';credits.append(summary);
+ for(const row of (notes.personnel||[])){const line=document.createElement('p');line.textContent=row.name+' · '+row.role;credits.append(line);}
+ for(const [field,label] of Object.entries({songwriters:'Written by',producer:'Produced by',engineer:'Recorded / mixed by',recordingLocation:'Sessions',recordingDate:'Recorded',originalReleaseDate:'Originally released',releaseDate:'Released',label:'Label',note:'Notes'})){
+  if(notes[field]){const line=document.createElement('p');line.textContent=label+' · '+notes[field];credits.append(line);}
+ }
+ if(credits.children.length>1)cards.push(credits);
+ $('context-cards').replaceChildren(...cards);$('context-title').textContent='About '+(p.prepared_title||'the prepared record');root.hidden=!cards.length;
+}
 function presentation(state){
  const p=state.presentation||{},play=state.playback||{},configured=!!state.config?.source;
+ musicalContext(p);
  $('room-name').textContent=state.config?.sonos_room_name||(state.config?.source==='roon'?'Your Roon output':configured?'Your listening room':'Your room');
- $('source-label').textContent=configured?({sonos:'Sonos',roon:'Roon',upnp:'UPnP renderer'}[state.config.source]):'Choose a music source to begin';
+ $('source-label').textContent=configured?({sonos:'Sonos',roon:'Roon',spotify:'Spotify account',upnp:'UPnP renderer'}[state.config.source]):'Choose a music source to begin';
+ const spotifyURL=p.source==='spotify'&&/^https:\/\/open\.spotify\.com\/track\/[A-Za-z0-9]{22}$/.test(p.source_url||'')?p.source_url:'';
+ $('spotify-link').hidden=!spotifyURL;if(spotifyURL)$('spotify-link').href=spotifyURL;else $('spotify-link').removeAttribute('href');
+ $('collection').hidden=state.config?.source==='spotify';
  const fresh=play.updated_at&&Date.now()/1000-play.updated_at<20;
  $('transport').textContent=state.running?(fresh?(play.transport==='PLAYING'?'ON THE RECORD':play.transport==='UNAVAILABLE'?'CONNECTION NEEDS ATTENTION':'WAITING FOR MUSIC'):'WAITING FOR AN UPDATE'):state.busy?'PREPARING YOUR ROOM':p.revision?'LAST PREPARED TRACK':'READY WHEN YOU ARE';
  if(play.title){$('track').textContent=play.title;$('artist').textContent=play.artist||'';$('album').textContent=play.album||'';}
@@ -63,7 +87,7 @@ function presentation(state){
 }
 async function refresh(){
  try{const state=await api('status');latest=state;if(!loaded){hydrate(state.config);loaded=true;if(!state.busy)lastResult=String(state.operation_id);if(state.config?.source)showNow();else showSetup();}controls(state);presentation(state);$('connection').textContent='LOCAL CONNECTION';
- if(state.failure)message(state.failure);
+ if(state.failure)message(state.failure);else if(state.playback?.source_error)message(state.playback.source_error);
  const key=String(state.operation_id);
  if(!state.busy&&state.result&&Object.keys(state.result).length&&lastResult!==key){lastResult=key;if(!state.result.ok)message(state.result.message);else{const data=state.result.data;
  if(state.operation==='discover'){const selected=$('rooms').value;$('rooms').replaceChildren();option($('rooms'),'','Choose a room');for(const room of data.rooms)option($('rooms'),room.uid,room.name);if(selected&&!data.rooms.some(r=>r.uid===selected))option($('rooms'),selected,'Saved room · not found');$('rooms').value=selected;$('tvs').replaceChildren();option($('tvs'),'','Choose a discovered TV');for(const tv of data.tvs)option($('tvs'),JSON.stringify(tv),tv.name+' · '+tv.host);$('discovery').textContent=`Found ${data.tvs.length} TV(s) and ${data.rooms.length} room(s). ${data.warning||''}`;if(!data.tvs.length)$('manual').open=true;message(data.tvs.length?'Devices found. Choose your TV, then your room.':'Your TV wasn’t discovered. Enter its address below; your rooms are available in step 2.');}

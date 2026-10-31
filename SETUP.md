@@ -93,7 +93,9 @@ Example Sonos config body (replace placeholders with discovered values):
 }
 ```
 
-The API fixes polling at two seconds and idle restoration at 120 seconds. For UPnP, it accepts `renderer_control_url`, `local_art_hosts` and optional `minim_control`, `library_root`, `library_resource_prefix`. Roon accepts `roon_state_dir`; output selection still belongs to the Roon extension. The UI/API does not install dependencies, update software, change network settings or control music playback.
+Spotify requires one-time authorization with your existing Premium account and its own registered app; see [Spotify setup](SPOTIFY.md). The API accepts `spotify_token_file`, a private file path, and fixes Spotify polling at five seconds.
+
+For other sources, the API fixes polling at two seconds and idle restoration at 120 seconds. For UPnP, it accepts `renderer_control_url`, `local_art_hosts` and optional `minim_control`, `library_root`, `library_resource_prefix`, `liner_notes_file` and `music_context_file`. Roon accepts `roon_state_dir`; output selection still belongs to the Roon extension. The UI/API does not install dependencies, update software, change network settings or control music playback.
 
 Samsung’s [network-status guide](https://www.samsung.com/ca/support/tv-audio-video/verify-network-status-on-your-samsung-tv/) illustrates finding the TV’s IP settings; menu names vary by model.
 

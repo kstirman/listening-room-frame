@@ -1,0 +1,8 @@
+{
+  "source": "spotify",
+  "tv": "frame.local",
+  "tv_model": "REPLACE_WITH_VERIFIED_TV_MODEL",
+  "spotify_token_file": "~/.local/state/listening-room-spotify/spotify-tokens.json",
+  "poll_seconds": 5,
+  "idle_seconds": 120
+}

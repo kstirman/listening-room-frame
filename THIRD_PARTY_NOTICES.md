@@ -1,3 +1,11 @@
+# Spotify attribution asset
+
+`assets/spotify-logo-white.png` is the unmodified `Spotify_Full_Logo_RGB_White.png`
+from Spotify's official [full-logo package](https://developer.spotify.com/images/guidelines/design/2024-spotify-full-logo.zip),
+downloaded October 31, 2026. It is used for required source attribution under
+Spotify's [Design & Branding Guidelines](https://developer.spotify.com/documentation/design).
+The Spotify marks belong to Spotify and are not covered by this project's MIT license.
+
 # Shared-album protocol reference
 
 The unofficial pagination request/response format was informed by

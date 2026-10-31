@@ -2,7 +2,7 @@
 
 Display the album you're listening to on a Samsung The Frame TV, with a rotating collage of your 28 most recent albums. The TV stays in Art Mode while audio plays through your existing hi-fi.
 
-A Python service reads playback information from a UPnP renderer, a selected Sonos room, or the experimental Roon extension, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
+A Python service reads playback information from a UPnP renderer, a selected Sonos room, an authorized Spotify account, or the experimental Roon extension, finds artwork, renders a 4K image, and sends it to the Frame's local Art Mode interface. No iPad screen mirroring or TV audio playback is involved.
 
 ## Choose your playback source
 
@@ -16,7 +16,7 @@ A Python service reads playback information from a UPnP renderer, a selected Son
 | Local files served by MinimServer | Supported; file-level enrichment is optional |
 | Roon Server | Experimental selected-output support; [setup and validation limits](roon/README.md) |
 | Sonos room | Experimental read-only input; [setup and validation limits](SONOS.md) |
-| Spotify app or Spotify Connect alone | Not yet supported; Spotify playback is not automatically exposed through UPnP AVTransport |
+| Spotify app / Spotify Connect | Experimental account-level current-track input; [authorization and limits](SPOTIFY.md) |
 
 A compatible Samsung Frame and a computer running the bridge are still needed. The computer handles artwork, not music playback. MinimServer and local library access are needed only for the local-library features, not for Qobuz-only playback.
 
@@ -24,17 +24,13 @@ A compatible Samsung Frame and a computer running the bridge are still needed. T
 
 The bridge supports the default UPnP input and an experimental Roon input feeding the existing artwork/TV pipeline. Additional services need their own playback-source adapters. Each adapter should supply playback state, stable provider/album/track identifiers, title, artist, cover location and a source link. Provider-specific IDs must remain separate from Qobuz IDs; missing classical roles or recording dates must remain unknown. UPnP should remain the default so existing installations retain their behavior.
 
-Spotify's [currently-playing API](https://developer.spotify.com/documentation/web-api/reference/get-the-users-currently-playing-track) offers an account-level input independent of JPLAY, MinimServer and a UPnP renderer. A proposed adapter would use user authorization with the read-only `user-read-currently-playing` scope and token refresh; it would not control audio. This adapter is **not implemented or live-tested**.
-
-Spotify needs a distribution/design decision before it can be presented as supported:
-
-- As checked October 10, 2026, new development apps are limited to five authorized users and the app owner must have Premium. Each user's own developer app is a DIY setup, not a frictionless public login. See [Spotify's development-mode guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide).
-- Spotify requires attribution and links back, and restricts standalone metadata/artwork products. Its visual-content rules also need review for the Frame display and rotating history collage. Existing Qobuz layouts and history behavior should not simply be reused with an assumption of Spotify approval. See the [developer policy](https://developer.spotify.com/policy) and [display guidelines](https://developer.spotify.com/documentation/design).
-- A Spotify account and a representative playback device are needed for end-to-end validation. Mocked API tests alone would not establish Spotify Connect or TV compatibility.
+Spotify now has an experimental read-only adapter with PKCE sign-in, token refresh, a nearly full-height cover layout and official attribution. It follows one authorized account across Spotify Connect devices; it does not control audio or add Spotify covers to listening-history collages. See [Spotify setup, access requirements and validation limits](SPOTIFY.md). A real account and physical TV check remain necessary before claiming end-to-end compatibility.
 
 ## On the screen
 
-These are the images rendered by Listening Room Frame for the TV: album artwork, a detailed classical view, and the recent-album collage.
+Music cards now give the complete cover a nearly full-height 2080-pixel box, with supporting information beside it. [Reviewed musical connections](MUSICAL-CONTEXT.md) add one concise, sourced relationship to the card and full links and credits to the console.
+
+The screenshots below document the earlier centered/classical layouts and the retained recent-album collage; they have not yet been replaced with the new layout.
 
 ### Now playing
 

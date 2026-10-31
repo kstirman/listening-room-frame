@@ -28,7 +28,7 @@ Spotify now has an experimental read-only adapter with PKCE sign-in, token refre
 
 ## On the screen
 
-Music cards now give the complete cover a nearly full-height 2080-pixel box, with supporting information beside it. [Reviewed musical connections](MUSICAL-CONTEXT.md) add one concise, sourced relationship to the card and full links and credits to the console.
+Music cards now give the complete cover a nearly full-height 2080-pixel box, with supporting information beside it. The album title leads the text, followed by the artist and a smaller current-track section; classical cards emphasize the work above the movement. [Reviewed musical connections](MUSICAL-CONTEXT.md) add one concise, sourced relationship to the card and full links and credits to the console.
 
 The screenshots below document the earlier centered/classical layouts and the retained recent-album collage; they have not yet been replaced with the new layout.
 

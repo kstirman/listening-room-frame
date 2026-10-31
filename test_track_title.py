@@ -47,5 +47,5 @@ class TrackTitleTests(unittest.TestCase):
             with patch('layouts.ImageDraw.Draw',return_value=draw):
                 layouts.current(cover,'Example Album','Artist',Path(root)/'card.jpg',track_title='Second song',duration_seconds=180)
             lines=[c.args[1] for c in draw.text.call_args_list]
-            self.assertEqual(lines[:3],['Second song','Artist','Example Album'])
+            self.assertEqual(lines[:4],['Example Album','Artist','NOW PLAYING','Second song'])
             self.assertIn('Track length 3:00',lines[-1])

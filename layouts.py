@@ -84,13 +84,20 @@ def connection(column, details):
     column.block('Source: '+row['source_title'], 28, (173,171,160), 1)
 
 
+def music_identity(column, album, artist, track=''):
+    """Keep the sleeve's album and artist prominent as individual tracks change."""
+    album, artist, track = (' '.join(str(value or '').split()) for value in (album, artist, track))
+    column.block(album or track, 96, lines=3, gap=36)
+    column.block(artist, 64, (210,206,194), 2, 48)
+    if album and track and album.casefold() != track.casefold():
+        column.block('NOW PLAYING', 28, (205,173,115), 1, 14)
+        column.block(track, 56, (226,221,209), 3, 40)
+
+
 def current(cover_path, title, artist, output, recording_year='', date_line='', duration_seconds=None, track_title=''):
     canvas = sleeve(cover_path)
-    column = Column(canvas, y=600)
-    column.block(track_title or title, 84, lines=4, gap=50)
-    column.block(artist, 56, (200,197,186), 3, 45)
-    if track_title and title and track_title != title:
-        column.block(title, 44, (173,171,160), 3)
+    column = Column(canvas, y=480)
+    music_identity(column, title, artist, track_title)
     column.y, column.bottom = 1920, 2120
     column.block(date_line or ('Recorded · '+recording_year if recording_year else ''), 36, (173,171,160), 2)
     duration = timing.label(duration_seconds)
@@ -108,41 +115,19 @@ def spotify(cover_path, metadata, output):
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, art.width-1, art.height-1), radius=8, fill=255)
     canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2), mask)
     draw = ImageDraw.Draw(canvas)
-    x, width, y = 2250, 1490, 390
+    column = Column(canvas, y=360, bottom=1620)
+    x, width = column.x, column.width
     with Image.open(Path(__file__).parent/'assets/spotify-logo-white.png') as original_logo:
         logo = ImageOps.contain(original_logo.convert('RGBA'), (400, 120), Image.Resampling.LANCZOS)
     canvas.paste(logo, (x, 110), logo)
 
-    def block(text, size, color, limit):
-        nonlocal y
-        words = str(text or '').split()
-        lines, line = [], ''
-        face = font(size)
-        for word in words:
-            candidate = (line+' '+word).strip()
-            if line and draw.textlength(candidate, font=face) > width:
-                lines.append(line); line = word
-            else:
-                line = candidate
-        if line: lines.append(line)
-        clipped = len(lines) > limit
-        lines = lines[:limit]
-        if clipped: lines[-1] += '…'
-        for line in lines:
-            fitted, face = fit_text(draw, line, width, size)
-            draw.text((x, y), fitted, font=face, fill=color, anchor='lt')
-            y += round(size*1.32)
-        y += 54
-
-    block(metadata.get('title'), 84, (244, 241, 234), 4)
-    block(metadata.get('artist'), 56, (211, 207, 195), 3)
-    block(metadata.get('album'), 46, (177, 174, 163), 3)
-    y = max(y, 1620)
+    music_identity(column, metadata.get('album'), metadata.get('artist'), metadata.get('title'))
+    column.y, column.bottom = 1780, 2000
     if metadata.get('releaseDate'):
-        block('Released · '+metadata['releaseDate'], 38, (177, 174, 163), 1)
+        column.block('Released · '+metadata['releaseDate'], 38, (177,174,163), 1)
     duration = timing.label(metadata.get('duration_seconds'))
     if duration:
-        block('Track length · '+duration, 38, (177, 174, 163), 1)
+        column.block('Track length · '+duration, 38, (177,174,163), 1)
     # The same link is clickable in the listening console.
     text, face = fit_text(draw, metadata['source_url'].removeprefix('https://'), width, 34)
     draw.text((x, 2035), text, font=face, fill=(211, 207, 195), anchor='lt')
@@ -174,12 +159,12 @@ def classical(cover_path, details, output):
     canvas = sleeve(cover_path)
     column = Column(canvas, y=160, bottom=1230)
     muted = (189,186,179)
-    column.block(details.get('composer'), 56, muted, 2)
+    column.block(details.get('composer'), 64, muted, 2)
     pending = details.get('catalog_status') == 'searching'
-    column.block((details.get('display_album') or details.get('work')) if pending else details.get('work'), 78, lines=3)
+    column.block((details.get('display_album') or details.get('work')) if pending else details.get('work'), 92, lines=3)
     if pending: column.block('Looking up work and credits…', 36, muted, 1)
     if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 36, muted, 1)
-    column.block(details.get('movement') or (details.get('display_track') if pending else ''), 58, lines=3)
+    column.block(details.get('movement') or (details.get('display_track') if pending else ''), 56, lines=3)
     column.y, column.bottom = max(column.y, 1130), 1780
     if details.get('connections'):
         connection(column, details)
@@ -196,9 +181,9 @@ def classical(cover_path, details, output):
 def roon(cover_path, lines, output, duration_seconds=None):
     """Preserve provider display lines without inventing classical roles."""
     canvas = sleeve(cover_path)
-    column = Column(canvas, y=550)
-    for value, size, color in zip(lines, (80,56,44), ((242,239,232),(200,197,186),(173,171,160))):
-        column.block(value, size, color, 4 if size == 80 else 3, 50)
+    column = Column(canvas, y=480)
+    track, artist, album = (list(lines)+['','',''])[:3]
+    music_identity(column, album, artist, track)
     duration = timing.label(duration_seconds)
     if duration:
         column.y, column.bottom = 2020, 2120
@@ -244,13 +229,11 @@ def track_timing(draw, details, x, y, width):
 def liner(cover_path, title, artist, output, details):
     """Artwork leads; one sourced connection or a few track credits support it."""
     canvas = sleeve(cover_path)
-    column = Column(canvas, y=180, bottom=1740)
+    column = Column(canvas, y=180, bottom=1140)
     muted = (185,180,165)
     notes = details.get('liner_notes') or {}
-    column.block(details.get('display_track') or title, 78, lines=3, gap=35)
-    column.block(artist, 52, muted, 2)
-    if title != details.get('display_track'):
-        column.block(title, 40, muted, 2, 45)
+    music_identity(column, title, artist, details.get('display_track'))
+    column.y, column.bottom = max(column.y+60, 1180), 1780
     if details.get('connections'):
         connection(column, details)
     else:

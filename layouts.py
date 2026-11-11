@@ -78,10 +78,10 @@ def connection(column, details):
     if not rows:
         return
     row = rows[0]
-    column.block(row['label'].upper()+' · '+row['scope'], 30, (205,173,115), 1, 18)
-    column.block(row['target_title']+' · '+row['target_artist'], 46, lines=2, gap=18)
-    column.block(row['explanation'], 38, (205,202,190), 4, 20)
-    column.block('Source: '+row['source_title'], 28, (173,171,160), 1)
+    column.block(row['label'].upper()+' · '+row['scope'], 40, (221,190,135), 1, 18)
+    column.block(row['target_title']+' · '+row['target_artist'], 56, lines=2, gap=18)
+    column.block(row['explanation'], 52, (220,216,203), 3, 20)
+    column.block('Source: '+row['source_title'], 40, (205,201,187), 1)
 
 
 def music_identity(column, album, artist, track=''):
@@ -90,7 +90,7 @@ def music_identity(column, album, artist, track=''):
     column.block(album or track, 96, lines=3, gap=36)
     column.block(artist, 64, (210,206,194), 2, 48)
     if album and track and album.casefold() != track.casefold():
-        column.block('NOW PLAYING', 28, (205,173,115), 1, 14)
+        column.block('NOW PLAYING', 40, (221,190,135), 1, 14)
         column.block(track, 56, (226,221,209), 3, 40)
 
 
@@ -98,10 +98,10 @@ def current(cover_path, title, artist, output, recording_year='', date_line='', 
     canvas = sleeve(cover_path)
     column = Column(canvas, y=480)
     music_identity(column, title, artist, track_title)
-    column.y, column.bottom = 1920, 2120
-    column.block(date_line or ('Recorded · '+recording_year if recording_year else ''), 36, (173,171,160), 2)
+    column.y, column.bottom = 1840, 2120
+    column.block(date_line or ('Recorded · '+recording_year if recording_year else ''), 52, (210,205,191), 2)
     duration = timing.label(duration_seconds)
-    if duration: column.block('Track length '+duration, 36, (173,171,160), 1)
+    if duration: column.block('Track length '+duration, 52, (210,205,191), 1)
     canvas.save(output, quality=95)
 
 
@@ -124,12 +124,12 @@ def spotify(cover_path, metadata, output):
     music_identity(column, metadata.get('album'), metadata.get('artist'), metadata.get('title'))
     column.y, column.bottom = 1780, 2000
     if metadata.get('releaseDate'):
-        column.block('Released · '+metadata['releaseDate'], 38, (177,174,163), 1)
+        column.block('Released · '+metadata['releaseDate'], 52, (210,205,191), 1)
     duration = timing.label(metadata.get('duration_seconds'))
     if duration:
-        column.block('Track length · '+duration, 38, (177,174,163), 1)
+        column.block('Track length · '+duration, 52, (210,205,191), 1)
     # The same link is clickable in the listening console.
-    text, face = fit_text(draw, metadata['source_url'].removeprefix('https://'), width, 34)
+    text, face = fit_text(draw, metadata['source_url'].removeprefix('https://'), width, 44)
     draw.text((x, 2035), text, font=face, fill=(211, 207, 195), anchor='lt')
     canvas.save(output, quality=95)
 
@@ -158,23 +158,23 @@ def collage(history, root, output):
 def classical(cover_path, details, output):
     canvas = sleeve(cover_path)
     column = Column(canvas, y=160, bottom=1230)
-    muted = (189,186,179)
+    muted = (214,210,198)
     column.block(details.get('composer'), 64, muted, 2)
     pending = details.get('catalog_status') == 'searching'
     column.block((details.get('display_album') or details.get('work')) if pending else details.get('work'), 92, lines=3)
-    if pending: column.block('Looking up work and credits…', 36, muted, 1)
-    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 36, muted, 1)
+    if pending: column.block('Looking up work and credits…', 52, muted, 1)
+    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 52, muted, 1)
     column.block(details.get('movement') or (details.get('display_track') if pending else ''), 56, lines=3)
-    column.y, column.bottom = max(column.y, 1130), 1780
+    column.y, column.bottom = max(column.y, 1130), 1690
     if details.get('connections'):
         connection(column, details)
     else:
-        if details.get('conductor'): column.block('Conductor · '+details['conductor'], 44, muted, 2)
-        column.block(details.get('orchestra'), 44, muted, 2)
-        column.block('; '.join(filter(None, (details.get('soloist'), details.get('performer')))), 44, muted, 2)
-    column.y, column.bottom = 1790, 1850
-    column.block(dates.display_line(details, include_composition=False), 34, muted, 1)
-    track_timing(column.draw, details, column.x, 1860, column.width)
+        if details.get('conductor'): column.block('Conductor · '+details['conductor'], 56, muted, 2)
+        column.block(details.get('orchestra'), 56, muted, 2)
+        column.block('; '.join(filter(None, (details.get('soloist'), details.get('performer')))), 56, muted, 2)
+    column.y, column.bottom = 1710, 1800
+    column.block(dates.display_line(details, include_composition=False), 52, muted, 1)
+    track_timing(column.draw, details, column.x, 1840, column.width)
     canvas.save(output, quality=95)
 
 
@@ -187,7 +187,7 @@ def roon(cover_path, lines, output, duration_seconds=None):
     duration = timing.label(duration_seconds)
     if duration:
         column.y, column.bottom = 2020, 2120
-        column.block('Track length · '+duration, 36, (173,171,160), 1)
+        column.block('Track length · '+duration, 52, (210,205,191), 1)
     canvas.save(output, quality=95)
 
 
@@ -204,7 +204,7 @@ def track_timing(draw, details, x, y, width):
     heading = ' · '.join(filter(None, [heading, duration]))
     if not heading:
         return
-    draw.text((x, y), heading, font=font(42), fill=(225,222,210), anchor='lt')
+    draw.text((x, y), heading, font=font(56), fill=(225,222,210), anchor='lt')
     if not valid:
         return
     gap = min(12, width / (len(lengths)*5))
@@ -213,48 +213,48 @@ def track_timing(draw, details, x, y, width):
     cursor = x
     for i, length in enumerate(lengths):
         end = cursor + usable * length / total
-        draw.rectangle((cursor, y+68, end, y+83), fill=(237,197,125) if i == index else (105,104,96))
+        draw.rectangle((cursor, y+80, end, y+95), fill=(237,197,125) if i == index else (105,104,96))
         cursor = end + gap
     # Fixed legend cells keep short movements readable without distorting bars.
     if len(lengths) > 16:
-        draw.text((x, y+115), ('Selected excerpts · ' if kind=='Excerpt' else 'Whole work · ')+timing.label(sum(lengths)), font=font(32), fill=(164,163,151), anchor='lt')
+        draw.text((x, y+120), ('Selected excerpts · ' if kind=='Excerpt' else 'Whole work · ')+timing.label(sum(lengths)), font=font(42), fill=(205,201,187), anchor='lt')
         return
     columns = 4
     for i, length in enumerate(lengths):
         text = f'{i+1}  {timing.label(length)}'
-        draw.text((x+(i%columns)*width/columns, y+110+(i//columns)*46), text,
-                  font=font(32), fill=(237,197,125) if i == index else (164,163,151), anchor='lt')
+        draw.text((x+(i%columns)*width/columns, y+115+(i//columns)*50), text,
+                  font=font(42), fill=(237,197,125) if i == index else (205,201,187), anchor='lt')
 
 
 def liner(cover_path, title, artist, output, details):
     """Artwork leads; one sourced connection or a few track credits support it."""
     canvas = sleeve(cover_path)
     column = Column(canvas, y=180, bottom=1140)
-    muted = (185,180,165)
+    muted = (214,210,198)
     notes = details.get('liner_notes') or {}
     music_identity(column, title, artist, details.get('display_track'))
-    column.y, column.bottom = max(column.y+60, 1180), 1780
+    column.y, column.bottom = max(column.y+50, 1120), 1700
     if details.get('connections'):
         connection(column, details)
     else:
         if notes.get('personnel'):
-            column.block('ON THIS TRACK', 30, (205,173,115), 1)
+            column.block('ON THIS TRACK', 40, (221,190,135), 1)
             for person in notes['personnel'][:3]:
-                column.block(person['name']+' · '+person['role'], 42, lines=1, gap=18)
+                column.block(person['name']+' · '+person['role'], 56, lines=1, gap=18)
         if notes.get('note'):
-            column.block(notes['note'], 38, lines=4)
+            column.block(notes['note'], 52, lines=4)
         elif notes.get('songwriters'):
-            column.block('Written by '+notes['songwriters'], 36, muted, 2)
-    column.y, column.bottom = 1820, 2120
-    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 34, muted, 1, 12)
+            column.block('Written by '+notes['songwriters'], 52, muted, 2)
+    column.y, column.bottom = 1740, 2120
+    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 52, muted, 1, 12)
     footer = []
     if notes.get('recordingDate'): footer.append('Recorded '+notes['recordingDate'])
     release = notes.get('originalReleaseDate') or notes.get('releaseDate')
     if release: footer.append(('Originally released ' if notes.get('originalReleaseDate') else 'Released ')+release)
     if notes.get('label'): footer.append(notes['label'])
-    column.block(' · '.join(footer) or dates.display_line(details, include_composition=False), 34, muted, 2, 20)
+    column.block(' · '.join(footer) or dates.display_line(details, include_composition=False), 52, muted, 2, 20)
     duration = timing.label(details.get('duration_seconds'))
-    if duration: column.block('Track length · '+duration, 34, muted, 1)
+    if duration: column.block('Track length · '+duration, 52, muted, 1)
     canvas.save(output, quality=95)
 
 

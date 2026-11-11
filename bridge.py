@@ -770,6 +770,8 @@ class Bridge:
                      fingerprint(self.album_key(metadata)),
                      getattr(self, '_media_fingerprint', fingerprint(metadata.get('resource'))))
         if signature != getattr(self, '_last_playback_signature', None):
+            if status == 'PLAYING' and getattr(self, 'music_catalog', None) is not None:
+                self.music_catalog.encounter(metadata)
             LOG.info('Playback changed: state=%s track=%s album=%s media=%s', *signature)
             self._last_playback_signature = signature
 

@@ -578,3 +578,23 @@ The server binds to loopback only, checks Host/Origin and requires a per-run tok
 
 
 The private review lab also supports browsing named connection candidates. **Next connection** cycles across different ideas; **Reshuffle this connection** keeps the idea and changes its sample. The caption is visible by default and can be hidden for blind review. To include experimental connections without changing the Frame rules, export with `--connections photo-lab-connections.json --recipes 48 --per-recipe 8`. The exporter derives candidate membership from existing tags, enforces current exclusions and diversity, and caps preview images at 128 MiB. Unsupported ideas are skipped; model matches still need visual review. Use a fresh output folder; older review folders remain intact.
+
+### Durable catalog intake and backups
+
+While playing, the bridge retains a private album and track intake record even
+when metadata lookup fails. Candidate edition IDs remain unverified until matched;
+intake records do not expire. Spotify retains its existing no-persistence policy.
+
+Audit missing metadata and create a consistent, verified metadata-only archive:
+
+```sh
+python catalog_maintenance.py audit --database /private/path/music-catalog.sqlite3 --output /private/path/audit.json
+python catalog_maintenance.py backup --database /private/path/music-catalog.sqlite3 --output /private/path/catalog-backup.zip
+```
+
+The audit reports review candidates, not proven errors: excerpts and standalone
+movements may correctly lack a whole-work strip. Backups contain SQLite, its saved
+source documents, restore instructions and SHA-256 checksums. They exclude audio,
+photos and application configuration. Keep both outputs private. The backup command
+refuses to overwrite an existing archive; scheduling and private cloud upload are
+separate deployment responsibilities.

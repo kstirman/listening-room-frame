@@ -7,6 +7,7 @@ SQLite indexes exact aliases for bounded, conservative playback lookup.
 from contextlib import closing, contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import functools
+import hashlib
 import itertools
 import json
 import logging
@@ -38,6 +39,10 @@ CREATE TABLE IF NOT EXISTS aliases(title TEXT, album TEXT, artist TEXT, duration
 CREATE INDEX IF NOT EXISTS alias_lookup ON aliases(title,album,artist,duration);
 CREATE TABLE IF NOT EXISTS observations(identity TEXT PRIMARY KEY, saved_at REAL,
  payload TEXT);
+CREATE TABLE IF NOT EXISTS encountered_albums(identity TEXT PRIMARY KEY,
+ album_id TEXT, first_seen REAL, last_seen REAL, payload TEXT);
+CREATE TABLE IF NOT EXISTS encountered_tracks(identity TEXT PRIMARY KEY,
+ album_identity TEXT, first_seen REAL, last_seen REAL, payload TEXT);
 '''
 
 
@@ -316,6 +321,42 @@ class Store:
         # Source identifiers and complete fields remain in editions/local_tracks.
         with self.connect() as db:
             db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?)',(identity,time.time(),json.dumps(details)))
+
+    @available()
+    def encounter(self, metadata):
+        """Retain unresolved listening identities too, without proxy URLs/secrets.
+
+        This is an intake record, not evidence of a verified recording match.
+        No expiry or count-based eviction applies to these private records.
+        """
+        if metadata.get('source') == 'spotify' or not metadata.get('album'):
+            return
+        album_id = metadata.get('album_id')
+        if not album_id:
+            from urllib.parse import urlparse
+            cover = urlparse(metadata.get('albumArtURI', ''))
+            match = re.fullmatch(r'/images/covers/[A-Za-z0-9]{2}/[A-Za-z0-9]{2}/([A-Za-z0-9]{1,64})_[0-9]{2,4}\.jpg', cover.path)
+            if cover.scheme == 'https' and cover.netloc == 'static.qobuz.com' and match:
+                album_id = match[1]
+        if album_id and not re.fullmatch(r'[A-Za-z0-9]{1,64}', str(album_id)):
+            album_id = None
+        fields = {k: metadata[k] for k in ('album', 'artist', 'albumArtist', 'title',
+                  'composer', 'genre', 'duration_seconds', 'source') if metadata.get(k) is not None}
+        if album_id:
+            fields['album_id'] = str(album_id)
+        # An artwork-derived ID is a discovery candidate, not verified metadata.
+        fields['identity_status'] = 'candidate' if album_id else 'unresolved'
+        album_key = 'qobuz:' + str(album_id) if album_id else 'unresolved:' + hashlib.sha256(
+            json.dumps([fields.get(k) for k in ('source', 'album', 'artist')], ensure_ascii=False).encode()).hexdigest()
+        identity = hashlib.sha256(json.dumps([album_key, fields.get('title'),
+            timing.seconds(fields.get('duration_seconds'))], ensure_ascii=False).encode()).hexdigest()
+        now = time.time()
+        with self.connect() as db:
+            db.execute('INSERT INTO encountered_albums VALUES(?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET last_seen=excluded.last_seen, payload=excluded.payload',
+                       (album_key, album_id, now, now, json.dumps({k:v for k,v in fields.items() if k not in ('title','duration_seconds')})))
+            if fields.get('title'):
+                db.execute('INSERT INTO encountered_tracks VALUES(?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET last_seen=excluded.last_seen, payload=excluded.payload',
+                           (identity, album_key, now, now, json.dumps(fields)))
 
 
 def tag_fields(tags):

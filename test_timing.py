@@ -16,6 +16,27 @@ def album(durations=('00:08:00', '00:12:00', '00:04:00')):
 
 
 class TimingTests(unittest.TestCase):
+    def test_complete_edition_of_excerpts_is_not_a_complete_work(self):
+        import copy
+        import classical
+        rows = {str(i): dict(title=f'An Opera, Act III: Scene {i}',
+                            duration_seconds=120, composer='Composer',
+                            _edition_verified='edition', _catalog_album_id='edition',
+                            _catalog_complete=True, _work_complete=False)
+                for i in range(1, 4)}
+        normalized = classical.catalog(rows)
+        for key in normalized:
+            self.assertIsNone(timing.composition(normalized, key))
+        for i, row in enumerate(normalized.values(), 1):
+            row.update(work='An Opera', composition_group='reviewed',
+                       composition_index=i, composition_count=3)
+        for key in normalized:
+            self.assertIsNone(timing.composition(normalized, key))
+        mixed = copy.deepcopy(normalized)
+        for key in ('1', '2'):
+            mixed[key].pop('_work_complete')
+        self.assertIsNone(timing.composition(mixed, '1'))
+
     def test_reviewed_split_finale_retains_full_work_and_rejects_bad_groups(self):
         import copy
         import classical

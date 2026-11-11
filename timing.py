@@ -71,12 +71,17 @@ def composition(tracks, current):
     entries = [(key,row) for key,row in tracks.items() if not row.get('non_music_interlude')]
     pos = next(i for i, (key, _) in enumerate(entries) if key == current)
     target = entries[pos][1]
+    # A complete edition can still contain only excerpts of a work.
+    if target.get('_work_complete') is False:
+        return None
     if target.get('composition_group'):
         # Explicit reviewed groups can span a movement split across tracks.
         # Require one verified edition, complete consecutive ordering and the
         # same work/composer; never turn a partial cache into a whole work.
         group = [(key, row) for key, row in entries
                  if row.get('composition_group') == target['composition_group']]
+        if any(row.get('_work_complete') is False for _, row in group):
+            return None
         def integer(value):
             return int(str(value)) if re.fullmatch(r'[1-9]\d*', str(value)) else None
         count = integer(target.get('composition_count'))
@@ -114,6 +119,8 @@ def composition(tracks, current):
     while right < len(entries) and same(entries[right][1]):
         right += 1
     group = [item for _, item in entries[left:right]]
+    if any(item.get('_work_complete') is False for item in group):
+        return None
     lengths = [seconds(item.get('duration_seconds')) for item in group]
     if not 2 <= len(group) <= 128 or not all(lengths):
         return None

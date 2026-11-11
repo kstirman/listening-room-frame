@@ -12,6 +12,28 @@ from test_auto_catalog import META, page, search
 
 
 class SharedCatalogTests(unittest.TestCase):
+    def test_resource_sidecars_removed_from_catalog_but_files_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()/'music';root.mkdir()
+            real=root/'song.flac';real.write_bytes(b'fLaC')
+            unusual=root/'._real.flac';unusual.write_bytes(b'fLaC')
+            sidecar=root/'._song.flac';sidecar.write_bytes(b'\x00\x05\x16\x07metadata')
+            original=sidecar.read_bytes()
+            store=Store(Path(tmp)/'catalog.db')
+            with store.connect() as db:
+                db.execute('INSERT INTO local_tracks VALUES(?,?,?,?,?)',
+                           (str(sidecar),str(root),sidecar.stat().st_size,sidecar.stat().st_mtime_ns,'{}'))
+                db.execute('INSERT INTO aliases VALUES(?,?,?,?,?)',('song','album','artist',120,str(sidecar)))
+            with patch('music_catalog.local_composition.probe',return_value={'duration_seconds':120}) as probe:
+                result=store.sync_library(root)
+            self.assertEqual(result['files'],2)
+            self.assertEqual(result['excluded_sidecars'],1)
+            self.assertEqual({call.args[0] for call in probe.call_args_list},{real,unusual})
+            with store.connect() as db:
+                self.assertEqual({r[0] for r in db.execute('SELECT path FROM local_tracks')},{str(real),str(unusual)})
+                self.assertIsNone(db.execute('SELECT path FROM aliases WHERE path=?',(str(sidecar),)).fetchone())
+            self.assertEqual(sidecar.read_bytes(),original)
+
     def test_jplay_album_reused_by_audirvana_and_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             b = Bridge({},tmp); b.album_page = Mock(return_value=page())

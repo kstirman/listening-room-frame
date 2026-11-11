@@ -50,6 +50,18 @@ def key(value):
     return local_match.key(value)
 
 
+def apple_double(path):
+    """Recognize Mac resource metadata without confusing it with audio."""
+    path = Path(path)
+    if not path.name.startswith('._'):
+        return False
+    try:
+        with path.open('rb') as stream:
+            return stream.read(4) == b'\x00\x05\x16\x07'
+    except OSError:
+        return False
+
+
 def available(default=None):
     """Storage failures degrade to existing metadata paths, never stop artwork."""
     def decorate(fn):
@@ -195,7 +207,10 @@ class Store:
         reviewed = json.loads(reviewed_path.read_text()).get('tracks',{}) if reviewed_path.exists() else {}
         overrides = json.loads(overrides_path.read_text()) if overrides_path.exists() else {}
         paths = sorted(p for p in root.rglob('*') if p.suffix.lower() in {'.flac','.wav','.aiff','.aif','.m4a','.mp3','.dsf','.ape','.ogg','.opus','.wv'} and p.is_file())
-        result = {'files':len(paths),'saved':0,'probed':0,'errors':0}
+        sidecars = {p for p in paths if apple_double(p)}
+        paths = [p for p in paths if p not in sidecars]
+        result = {'files':len(paths),'saved':0,'probed':0,'errors':0,
+                  'excluded_sidecars':len(sidecars)}
         date_registry=self.document('work_dates',[]) or []
         with self.connect() as db:
             prior = {name:(size,mtime,payload) for name,size,mtime,payload in db.execute(
@@ -212,6 +227,13 @@ class Store:
                 return p,stat,old,tags,not unchanged
             except Exception:return None
         with ThreadPoolExecutor(max_workers=4) as readers, self.connect() as db:
+            # Old scans treated resource forks as songs. Remove only confirmed
+            # sidecar rows and aliases; preserve source documents and files.
+            for path in sidecars:
+                name = str(path.resolve())
+                if path.resolve().is_relative_to(root):
+                    db.execute('DELETE FROM aliases WHERE path=?', (name,))
+                    db.execute('DELETE FROM local_tracks WHERE path=? AND root=?', (name,str(root)))
             for item in readers.map(read,paths):
                 if item is None:
                     result['errors'] += 1

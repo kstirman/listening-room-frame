@@ -16,6 +16,36 @@ def album(durations=('00:08:00', '00:12:00', '00:04:00')):
 
 
 class TimingTests(unittest.TestCase):
+    def test_reviewed_split_finale_retains_full_work_and_rejects_bad_groups(self):
+        import copy
+        import classical
+        titles=['I. Allegro','II. Scherzo','III. Adagio',
+                'IV.: Presto','IV.: Allegro','IV.: Finale']
+        rows={str(i):dict(title=title,movementName=title,work='A Symphony',
+                         composer='A Composer',duration_seconds=60+i,
+                         composition_group='reviewed-cycle',composition_index=i+1,
+                         composition_count=6,_edition_verified='edition',
+                         _catalog_album_id='edition',_catalog_complete=True,
+                         _catalog_expected_tracks=6)
+              for i,title in enumerate(titles)}
+        normalized=classical.catalog(rows)
+        self.assertEqual({r['work'] for r in normalized.values()},{'A Symphony'})
+        for i in range(6):
+            self.assertEqual(timing.composition(normalized,str(i)),
+                             {'index':i,'durations':list(range(60,66)),'label':'Part'})
+        for field,value in [('composition_index',4),('composition_count',5),
+                            ('_edition_verified','other'),('composer','Other'),
+                            ('duration_seconds',None)]:
+            bad=copy.deepcopy(rows);bad['5'][field]=value
+            self.assertIsNone(timing.composition(classical.catalog(bad),'0'))
+        partial=copy.deepcopy(rows);partial.pop('5')
+        self.assertIsNone(timing.composition(classical.catalog(partial),'0'))
+        shuffled=dict(reversed(list(rows.items())))
+        self.assertIsNone(timing.composition(classical.catalog(shuffled),'0'))
+        unreviewed=copy.deepcopy(rows)
+        for row in unreviewed.values():row.pop('_edition_verified')
+        self.assertIsNone(timing.composition(classical.catalog(unreviewed),'0'))
+
     def test_lengths_and_unknown_values(self):
         for source, expected in [('00:09:42', 582), ('9:42.2', 582), (125.7, 126), ('3601', 3601)]:
             self.assertEqual(timing.seconds(source), expected)

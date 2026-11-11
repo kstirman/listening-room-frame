@@ -71,6 +71,33 @@ def composition(tracks, current):
     entries = [(key,row) for key,row in tracks.items() if not row.get('non_music_interlude')]
     pos = next(i for i, (key, _) in enumerate(entries) if key == current)
     target = entries[pos][1]
+    if target.get('composition_group'):
+        # Explicit reviewed groups can span a movement split across tracks.
+        # Require one verified edition, complete consecutive ordering and the
+        # same work/composer; never turn a partial cache into a whole work.
+        group = [(key, row) for key, row in entries
+                 if row.get('composition_group') == target['composition_group']]
+        def integer(value):
+            return int(str(value)) if re.fullmatch(r'[1-9]\d*', str(value)) else None
+        count = integer(target.get('composition_count'))
+        edition = target.get('_edition_verified')
+        if not count or not 2 <= count <= 128 or len(group) != count or not edition:
+            return None
+        if any(row.get('_edition_verified') != edition or
+               row.get('_catalog_album_id') != edition or
+               (row.get('work'), row.get('composer')) != (target.get('work'), target.get('composer')) or
+               not row.get('work') or not row.get('composer') or
+               integer(row.get('composition_count')) != count or
+               not seconds(row.get('duration_seconds')) for _, row in group):
+            return None
+        if [integer(row.get('composition_index')) for _, row in group] != list(range(1, count + 1)):
+            return None
+        positions = [i for i, (_, row) in enumerate(entries)
+                     if row.get('composition_group') == target['composition_group']]
+        if positions != list(range(positions[0], positions[-1] + 1)):
+            return None
+        return {'index': next(i for i, (key, _) in enumerate(group) if key == current),
+                'durations': [seconds(row['duration_seconds']) for _, row in group], 'label': 'Part'}
     work = target.get('work')
     if re.search(r'(?: / |, )Appendix$', work or '', re.I):
         return None

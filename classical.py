@@ -175,6 +175,9 @@ def catalog(tracks):
  def parts(row):
   return aliases.get(id(row),original_parts(row))
  def prefix(row):
+  # A reviewed recording group already supplies the work and part identities.
+  # Do not mistake a repeated movement prefix for a new work heading.
+  if row.get('composition_group'):return None
   if not normalize(row) or not row.get('composer'):return None
   work,sep,section=parts(row)
   return (work,row['composer'],row.get('work_scope')) if sep and work.strip() and section.strip() else None

@@ -25,6 +25,7 @@ import cover_evidence
 import source_outcomes
 import music_catalog
 import music_context
+import programme_context
 import reviewed_catalog
 import classical
 import dates
@@ -571,6 +572,9 @@ class Bridge:
             notes.update(liner_notes.lookup_data(metadata, self.music_catalog.document('liner', {}) or {}))
             notes.update(liner_notes.lookup(metadata, self.config))
         details = classical.normalize(enriched)
+        programme = programme_context.extract(enriched)
+        if programme:
+            details = dict(details or {}, programme_context=programme)
         if any(notes.get(k) for k in ('personnel', 'songwriters', 'recordingLocation', 'label', 'producer', 'engineer', 'note')):
             details = dict(details or {}, liner_notes=notes)
         if catalog_status:
@@ -646,7 +650,7 @@ class Bridge:
             layouts.roon(self.root / entry['cover'], metadata[metadata['source'] + '_lines'], image, duration_seconds=(details or {}).get('duration_seconds'))
         elif details and details.get('work') and entry:
             layouts.classical(self.root / entry['cover'], details, image)
-        elif entry and ((details or {}).get('liner_notes') or (details or {}).get('connections')):
+        elif entry and ((details or {}).get('liner_notes') or (details or {}).get('connections') or (details or {}).get('programme_context')):
             title = (details or {}).get('display_album') or title
             artist = (details or {}).get('display_artist') or entry.get('artist', '')
             layouts.liner(self.root / entry['cover'], title, artist, image, details)

@@ -2,6 +2,7 @@
 import math
 import timing
 import dates
+import programme_context
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
@@ -155,18 +156,31 @@ def collage(history, root, output):
     canvas.save(output,quality=95)
 
 
+def programme(column, context):
+    """Keep the coverage caveat separate and ahead of compact work/date rows."""
+    column.block(programme_context.LABEL, 40, (221,190,135), 1, 14)
+    column.block(programme_context.CAVEAT, 52, (214,210,198), 2, 18)
+    for row in context['rows']:
+        column.block(row['work']+' · '+row['year'], 52, lines=1, gap=10)
+
+
 def classical(cover_path, details, output):
     canvas = sleeve(cover_path)
-    column = Column(canvas, y=160, bottom=1230)
+    context = programme_context.extract(details)
+    column = Column(canvas, y=160, bottom=1080 if context else 1230)
     muted = (214,210,198)
     column.block(details.get('composer'), 64, muted, 2)
     pending = details.get('catalog_status') == 'searching'
     column.block((details.get('display_album') or details.get('work')) if pending else details.get('work'), 92, lines=3)
     if pending: column.block('Looking up work and credits…', 52, muted, 1)
-    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 52, muted, 1)
+    if details.get('composition_year') and not context: column.block('Composed · '+details['composition_year'], 52, muted, 1)
     column.block(details.get('movement') or (details.get('display_track') if pending else ''), 56, lines=3)
-    column.y, column.bottom = max(column.y, 1130), 1690
-    if details.get('connections'):
+    if context:
+        column.block('; '.join(filter(None, (details.get('soloist'), details.get('performer'), details.get('conductor'), details.get('orchestra')))), 56, muted, 2)
+    column.y, column.bottom = (1130 if context else max(column.y, 1130)), 1690
+    if context:
+        programme(column, context)
+    elif details.get('connections'):
         connection(column, details)
     else:
         if details.get('conductor'): column.block('Conductor · '+details['conductor'], 56, muted, 2)
@@ -229,12 +243,15 @@ def track_timing(draw, details, x, y, width):
 def liner(cover_path, title, artist, output, details):
     """Artwork leads; one sourced connection or a few track credits support it."""
     canvas = sleeve(cover_path)
-    column = Column(canvas, y=180, bottom=1140)
+    context = programme_context.extract(details)
+    column = Column(canvas, y=180, bottom=1050 if context else 1140)
     muted = (214,210,198)
     notes = details.get('liner_notes') or {}
     music_identity(column, title, artist, details.get('display_track'))
-    column.y, column.bottom = max(column.y+50, 1120), 1700
-    if details.get('connections'):
+    column.y, column.bottom = (1120 if context else max(column.y+50, 1120)), 1700
+    if context:
+        programme(column, context)
+    elif details.get('connections'):
         connection(column, details)
     else:
         if notes.get('personnel'):
@@ -246,7 +263,7 @@ def liner(cover_path, title, artist, output, details):
         elif notes.get('songwriters'):
             column.block('Written by '+notes['songwriters'], 52, muted, 2)
     column.y, column.bottom = 1740, 2120
-    if details.get('composition_year'): column.block('Composed · '+details['composition_year'], 52, muted, 1, 12)
+    if details.get('composition_year') and not context: column.block('Composed · '+details['composition_year'], 52, muted, 1, 12)
     footer = []
     if notes.get('recordingDate'): footer.append('Recorded '+notes['recordingDate'])
     release = notes.get('originalReleaseDate') or notes.get('releaseDate')

@@ -48,8 +48,15 @@ def number(track):
     text = match[1]
     if text[0].isdigit():
         return int(re.match(r'\d+', text)[0])
-    romans = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI']
-    return romans.index(text) + 1 if text in romans else None
+    # Accept canonical Roman numerals only; subtractive-looking malformed
+    # labels such as IIX or IC must not become movement numbers.
+    if not re.fullmatch(r'M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})', text):
+        return None
+    values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    total = sum(-values[c] if i + 1 < len(text) and values[c] < values[text[i + 1]]
+                else values[c] for i, c in enumerate(text))
+    # Match the supported maximum group size without expanding inference rules.
+    return total if 1 <= total <= 128 else None
 
 
 def composition(tracks, current):
@@ -137,7 +144,7 @@ def composition(tracks, current):
             and all(n is not None for n in numbers)
             and all(a < b for a,b in zip(numbers,numbers[1:]))):
         return {'index': pos-left, 'durations': lengths, 'label': 'Excerpt'}
-    if numbers == list(range(1, len(group) + 1)) and (len(group) <= 16 or numbered_pieces):
+    if numbers == list(range(1, len(group) + 1)):
         result = {'index': pos - left, 'durations': lengths}
         if numbered_pieces:
             result['label'] = 'Part'

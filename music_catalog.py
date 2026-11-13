@@ -88,6 +88,17 @@ class Store:
         self.last_sync = time.monotonic()
         self.revision = 0
 
+    def cache_revision(self):
+        """Observe external commits without opening a DB or holding a read lock."""
+        versions = []
+        for path in (self.path, Path(str(self.path) + '-wal')):
+            try:
+                stat = path.stat()
+                versions.append((stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns))
+            except OSError:
+                versions.append(None)
+        return self.revision, tuple(versions)
+
     @contextmanager
     def connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -349,7 +360,10 @@ class Store:
         identity = json.dumps([metadata.get(k) for k in ('album_id','album','artist','title','duration_seconds')])
         # Source identifiers and complete fields remain in editions/local_tracks.
         with self.connect() as db:
-            db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?)',(identity,time.time(),json.dumps(details)))
+            previous = db.execute('SELECT payload FROM observations WHERE identity=?', (identity,)).fetchone()
+            if not previous or json.loads(previous[0]) != details:
+                db.execute('INSERT OR REPLACE INTO observations VALUES(?,?,?)',
+                           (identity,time.time(),json.dumps(details)))
 
     @available()
     def encounter(self, metadata):

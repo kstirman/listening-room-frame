@@ -383,7 +383,7 @@ class Bridge:
         cache_key = (track, metadata.get('title', ''), timing.seconds(metadata.get('duration_seconds')), metadata.get('album', ''), metadata.get('artist', ''))
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
-        cache_key += (self.music_catalog.revision,)
+        cache_key += (self.music_catalog.cache_revision(),)
         if automatic:
             cache_key += (int(time.monotonic() // 10), self.auto_catalog.revision)
         if cache_key in self.detail_cache:

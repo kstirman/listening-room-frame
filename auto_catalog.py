@@ -159,6 +159,7 @@ class Resolver:
         self.get = get
         self.disk = CatalogCache(cache_path) if cache_path else None
         self.cache = {}
+        self.cache_versions = {}
         self.revision = 0
         self.lock = threading.Lock()
         self.busy = False
@@ -218,9 +219,15 @@ class Resolver:
         key = (canonical(album), canonical(artist)) + ((edition,) if edition else ())
         with self.lock:
             cached = self.cache.get(key)
-            if cached and time.monotonic() - cached[0] < (1800 if cached[2] == 'ready' else 300):
+            version = self.disk.cache_revision() if self.disk else None
+            self.cache_versions = {k: v for k, v in self.cache_versions.items() if k in self.cache}
+            fresh = cached and time.monotonic() - cached[0] < (1800 if cached[2] == 'ready' else 300)
+            changed = self.disk and self.cache_versions.get(key) != version
+            if fresh and not changed:
                 _, albums, status = cached
             else:
+                # Record the pre-read token so a concurrent commit is never hidden.
+                self.cache_versions[key] = version
                 saved = self.disk.load(key[:2]) if self.disk and not edition else None
                 if self.disk and edition:
                     rows = self.disk.edition(edition)
@@ -237,10 +244,14 @@ class Resolver:
                     status = 'ready'
                     if len(self.cache) >= 32:
                         self.cache.pop(next(iter(self.cache)))
-                    self.cache[key] = (time.monotonic(), albums, status)
-                    if stale and not self.busy:
+                    # Disk revalidation must not extend the existing retry/refresh TTL.
+                    self.cache[key] = (cached[0] if fresh else time.monotonic(), albums, status)
+                    if stale and not fresh and not self.busy:
                         self.busy = True
                         threading.Thread(target=self._run, args=(key, album, artist, True), daemon=True).start()
+                elif fresh:
+                    # Unrelated writes must not defeat negative-result cooldowns.
+                    _, albums, status = cached
                 elif not self.busy:
                     self.busy = True
                     threading.Thread(target=self._run, args=(key, album, artist), daemon=True).start()

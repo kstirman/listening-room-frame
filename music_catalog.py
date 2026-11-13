@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS observations(identity TEXT PRIMARY KEY, saved_at REAL
  payload TEXT);
 CREATE TABLE IF NOT EXISTS encountered_albums(identity TEXT PRIMARY KEY,
  album_id TEXT, first_seen REAL, last_seen REAL, payload TEXT);
+CREATE TABLE IF NOT EXISTS source_outcomes(album_id TEXT PRIMARY KEY, payload TEXT);
 CREATE TABLE IF NOT EXISTS encountered_tracks(identity TEXT PRIMARY KEY,
  album_identity TEXT, first_seen REAL, last_seen REAL, payload TEXT);
 '''
@@ -187,6 +188,20 @@ class Store:
             alternatives = [r for r in alternatives if not all(v.get('_catalog_album_id') == album_id for v in r.values())]
             if len(alternatives) < 12:
                 self.save(lookup_key, alternatives+[rows])
+
+    @available()
+    def source_outcome(self, album_id):
+        with self.connect() as db:
+            row = db.execute('SELECT payload FROM source_outcomes WHERE album_id=?', (album_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    @available()
+    def put_source_outcome(self, album_id, outcome):
+        if not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
+            return
+        with self.connect() as db:
+            db.execute('INSERT OR REPLACE INTO source_outcomes VALUES(?,?)', (album_id, json.dumps(outcome)))
+        return True
 
     def sync_documents(self, config, source_dir):
         paths = {'liner':config.get('liner_notes_file'),

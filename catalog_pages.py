@@ -31,7 +31,7 @@ def needs_refresh(rows):
                            (len(rows)%50==0 and any('_catalog_complete' not in r for r in rows.values())))
 
 
-def complete(page, album_id, get):
+def complete_result(page, album_id, get):
     """Insert successive fragments inside the original track container.
 
     Keep prior work/disc headings in scope. Any failed/duplicate/oversized page
@@ -39,8 +39,9 @@ def complete(page, album_id, get):
     """
     info=Page(page)
     expected=info.expected
-    if not expected or expected<=len(info.ids) or info.end is None:return page
-    if expected>1000 or not re.fullmatch(r'[A-Za-z0-9]{1,64}',album_id):return page
+    outcome = {'category': 'complete' if expected and expected == len(info.ids) else 'pending_partial', 'expected_tracks': expected, 'observed_tracks': len(info.ids), 'stage': 'pagination'}
+    if not expected or expected<=len(info.ids) or info.end is None:return page, outcome
+    if expected>1000 or not re.fullmatch(r'[A-Za-z0-9]{1,64}',album_id):return page, outcome
     fragments=[];seen=set(info.ids);offset=len(seen)
     try:
         while offset<expected:
@@ -52,6 +53,13 @@ def complete(page, album_id, get):
             fragment=response.text;more=Page(fragment).ids
             if not more or len(more)>50 or seen.intersection(more) or len(seen)+len(more)>expected:break
             fragments.append(fragment);seen.update(more);offset=len(seen)
-    except Exception:
-        pass
-    return page[:info.end]+''.join(fragments)+page[info.end:]
+    except Exception as error:
+        import source_outcomes
+        outcome.update(source_outcomes.failure(error))
+    outcome['observed_tracks'] = len(seen)
+    if len(seen) == expected:outcome['category'] = 'complete'
+    return page[:info.end]+''.join(fragments)+page[info.end:], outcome
+
+
+def complete(page, album_id, get):
+    return complete_result(page, album_id, get)[0]

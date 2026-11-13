@@ -77,14 +77,14 @@ class Tests(unittest.TestCase):
  def test_album_page_failure_backoff_and_recovery(self):
   import requests
   self.b.session=Mock()
-  self.b.session.get.return_value.raise_for_status.side_effect=requests.HTTPError('blocked')
-  with patch('bridge.time.monotonic',return_value=10):
+  self.b.session.get.return_value.raise_for_status.side_effect=requests.Timeout('transient')
+  with patch('bridge.time.time',return_value=10):
    for _ in range(2):
     with self.assertRaises(requests.RequestException):self.b.album_page('abc')
   self.assertEqual(self.b.session.get.call_count,1)
   self.b.session.get.return_value.raise_for_status.side_effect=None
   self.b.session.get.return_value.text='recovered'
-  with patch('bridge.time.monotonic',return_value=71),patch('catalog_pages.complete',return_value='recovered'):
+  with patch('bridge.time.time',return_value=71),patch('catalog_pages.complete_result',return_value=('recovered', {'category':'complete'})):
    self.assertEqual(self.b.album_page('abc'),'recovered')
   self.assertEqual(self.b.session.get.call_count,2)
  def test_qobuz_cover_uses_validated_renderer_cover_on_outage(self):

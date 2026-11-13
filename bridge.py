@@ -22,6 +22,7 @@ import local_composition
 import library_metadata
 import auto_catalog
 import cover_evidence
+import source_outcomes
 import music_catalog
 import music_context
 import reviewed_catalog
@@ -406,26 +407,42 @@ class Bridge:
                 result[field] = values.pop()
         return result
 
+    def source_outcome(self, album_id):
+        if not hasattr(self, 'page_outcomes'):
+            self.page_outcomes = {}
+        if album_id not in self.page_outcomes:
+            read = getattr(self.music_catalog, 'source_outcome', None)
+            self.page_outcomes[album_id] = read(album_id) if callable(read) else None
+        return self.page_outcomes[album_id]
+
+    def record_source_outcome(self, album_id, outcome):
+        self.page_outcomes[album_id] = outcome
+        write = getattr(self.music_catalog, 'put_source_outcome', None)
+        if callable(write):
+            write(album_id, outcome)
+
     def album_page(self, album_id):
-        if album_id not in self.pages:
-            failed = self.page_failures.get(album_id)
-            if failed and time.monotonic() < failed:
-                raise requests.RequestException('Catalog retry deferred')
-            try:
-                r = self.session.get('https://www.qobuz.com/us-en/album/-/' + album_id, timeout=15)
-                r.raise_for_status()
-                import catalog_pages
-                page = catalog_pages.complete(r.text, album_id, self.session.get)
-            except requests.RequestException:
-                if len(self.page_failures) >= 32:
-                    self.page_failures.pop(next(iter(self.page_failures)))
-                self.page_failures[album_id] = time.monotonic() + 60
-                raise
-            self.page_failures.pop(album_id, None)
-            if len(self.pages) >= 8:
-                self.pages.pop(next(iter(self.pages)))
-            self.pages[album_id] = page
-        return self.pages[album_id]
+        previous = self.source_outcome(album_id)
+        now = time.time()
+        due = previous and previous.get('category') == 'transient' and now >= previous.get('next_retry_at', float('inf'))
+        if album_id in self.pages and not due:
+            return self.pages[album_id]
+        if previous and previous.get('category') != 'complete' and not due:
+            raise requests.RequestException('Catalog source pending or deferred')
+        try:
+            r = self.session.get('https://www.qobuz.com/us-en/album/-/' + album_id, timeout=15)
+            r.raise_for_status()
+            import catalog_pages
+            page, outcome = catalog_pages.complete_result(r.text, album_id, self.session.get)
+        except requests.RequestException as error:
+            outcome = source_outcomes.scheduled(dict(source_outcomes.failure(error), stage='album'), previous, now)
+            self.record_source_outcome(album_id, outcome)
+            raise
+        self.record_source_outcome(album_id, source_outcomes.scheduled(outcome, previous, now))
+        if len(self.pages) >= 8:
+            self.pages.pop(next(iter(self.pages)))
+        self.pages[album_id] = page
+        return page
 
     def details(self, metadata):
         if metadata.get('source') == 'spotify':
@@ -446,6 +463,10 @@ class Bridge:
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
         cache_key += (self.music_catalog.cache_revision(),)
+        if metadata.get('album_id'):
+            outcome = self.source_outcome(metadata['album_id']) or {}
+            deadline = outcome.get('next_retry_at')
+            cache_key += (outcome.get('category'), deadline, bool(deadline and time.time() >= deadline))
         if automatic:
             cache_key += (int(time.monotonic() // 10), self.auto_catalog.revision)
         if cache_key in self.detail_cache:
@@ -470,9 +491,16 @@ class Bridge:
             ordered = self.music_catalog.edition(metadata['album_id'])
             import catalog_pages
             if not ordered or catalog_pages.needs_refresh(ordered):
+                prior_ordered = ordered
                 try:
                     page = self.album_page(metadata['album_id'])
-                    ordered = auto_catalog.parsed_rows(page, metadata['album_id'])
+                    fresh = auto_catalog.parsed_rows(page, metadata['album_id'])
+                    merged = source_outcomes.merge_refresh(ordered, fresh, metadata['album_id'])
+                    if merged is None:
+                        old_outcome = self.source_outcome(metadata['album_id']) or {}
+                        self.record_source_outcome(metadata['album_id'], dict(old_outcome, category='pending_identity_conflict', next_retry_at=None))
+                        raise requests.RequestException('Catalog refresh identity requires review')
+                    ordered = merged
                     album_parser = MetaParser(); album_parser.feed(page)
                     album, artist = metadata.get('album'), metadata.get('artist')
                     for record in album_parser.structured:
@@ -483,7 +511,8 @@ class Bridge:
                             album = record.get('name') or album
                             brand = record.get('brand', {})
                             if isinstance(brand, dict):artist = brand.get('name') or artist
-                    self.music_catalog.put_edition(metadata['album_id'], ordered, album, artist)
+                    if ordered != prior_ordered:
+                        self.music_catalog.put_edition(metadata['album_id'], ordered, album, artist)
                 except requests.RequestException:
                     catalog_unavailable = True
                     LOG.warning('Catalog enrichment unavailable; using current metadata')

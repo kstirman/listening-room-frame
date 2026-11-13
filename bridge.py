@@ -111,6 +111,10 @@ def metadata_values(xml):
     return result
 
 
+class ArtworkUnavailable(Exception):
+    """No verified artwork is available for the current album."""
+
+
 class Bridge:
     def __init__(self, config, root):
         self.config = config
@@ -132,6 +136,7 @@ class Bridge:
         self.blocked_album = None
         self.running = True
         self.pages = {}
+        self.page_failures = {}
         self.detail_cache = {}
         self.local_compositions = local_composition.Catalog()
         self.local_matches = local_match.Index()
@@ -283,14 +288,81 @@ class Bridge:
             tv.close()
             raise
 
+    @staticmethod
+    def qobuz_cover_url(url):
+        try:
+            parsed = urlparse(url or '')
+            return (parsed.scheme == 'https' and parsed.hostname == 'static.qobuz.com'
+                    and parsed.path.startswith('/images/covers/')
+                    and parsed.username is None and parsed.password is None
+                    and parsed.port in (None, 443))
+        except ValueError:
+            return False
+
+    def reviewed_edition_match(self, metadata):
+        album_id = metadata.get('album_id')
+        if not album_id:
+            return None, {}
+        rows = self.music_catalog.edition(album_id) or {}
+        verified = {key: row for key, row in rows.items()
+                    if row.get('_catalog_album_id') == album_id
+                    and row.get('_edition_verified') == album_id}
+        selected = (metadata.get('object_id') or '').rsplit('/', 1)[-1]
+        if selected in verified:
+            return selected, verified[selected]
+        # Ordinal-only captures have no provider track IDs. Match only an exact,
+        # unique duration across a complete verified edition, never a near match.
+        import catalog_pages
+        duration = timing.seconds(metadata.get('duration_seconds'))
+        if (not duration or not rows or len(verified) != len(rows)
+                or catalog_pages.needs_refresh(rows)
+                or any(str(row.get('_catalog_expected_tracks')) != str(len(rows)) for row in rows.values())
+                or any(not timing.seconds(row.get('duration_seconds')) for row in rows.values())):
+            return None, {}
+        matches = [(key, row) for key, row in verified.items()
+                   if timing.seconds(row.get('duration_seconds')) == duration]
+        if len(matches) != 1:
+            return None, {}
+        key, row = matches[0]
+        if metadata.get('title') and metadata['title'].strip().casefold() != row.get('title', '').strip().casefold():
+            return None, {}
+        return key, row
+
+    def reviewed_edition_row(self, metadata):
+        return self.reviewed_edition_match(metadata)[1]
+
+    def reviewed_edition_album(self, metadata):
+        album_id = metadata.get('album_id')
+        rows = (self.music_catalog.edition(album_id) or {}) if album_id else {}
+        verified = [row for row in rows.values()
+                    if row.get('_catalog_album_id') == album_id
+                    and row.get('_edition_verified') == album_id]
+        result = {}
+        for field in ('album', 'albumArtist', 'artist', '_album_art_url'):
+            values = {row[field] for row in verified if row.get(field)}
+            if len(values) == 1:
+                result[field] = values.pop()
+        return result
+
     def album_page(self, album_id):
         if album_id not in self.pages:
-            r = self.session.get('https://www.qobuz.com/us-en/album/-/' + album_id, timeout=15)
-            r.raise_for_status()
+            failed = self.page_failures.get(album_id)
+            if failed and time.monotonic() < failed:
+                raise requests.RequestException('Catalog retry deferred')
+            try:
+                r = self.session.get('https://www.qobuz.com/us-en/album/-/' + album_id, timeout=15)
+                r.raise_for_status()
+                import catalog_pages
+                page = catalog_pages.complete(r.text, album_id, self.session.get)
+            except requests.RequestException:
+                if len(self.page_failures) >= 32:
+                    self.page_failures.pop(next(iter(self.page_failures)))
+                self.page_failures[album_id] = time.monotonic() + 60
+                raise
+            self.page_failures.pop(album_id, None)
             if len(self.pages) >= 8:
                 self.pages.pop(next(iter(self.pages)))
-            import catalog_pages
-            self.pages[album_id] = catalog_pages.complete(r.text, album_id, self.session.get)
+            self.pages[album_id] = page
         return self.pages[album_id]
 
     def details(self, metadata):
@@ -318,6 +390,7 @@ class Bridge:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
         work_timing = None
+        catalog_unavailable = False
         local_status = None
         local_resource = None
         if not metadata.get('album_id') and self.config.get('library_root') and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/'):
@@ -335,21 +408,28 @@ class Bridge:
             ordered = self.music_catalog.edition(metadata['album_id'])
             import catalog_pages
             if not ordered or catalog_pages.needs_refresh(ordered):
-                page = self.album_page(metadata['album_id'])
-                ordered = auto_catalog.parsed_rows(page, metadata['album_id'])
-                album_parser = MetaParser(); album_parser.feed(page)
-                album, artist = metadata.get('album'), metadata.get('artist')
-                for record in album_parser.structured:
-                    if isinstance(record, dict) and record.get('@type') in ('Product', 'MusicAlbum'):
-                        value = record.get('releaseDate') or record.get('datePublished')
-                        if value:enriched.setdefault('releaseDate', value)
-                    if isinstance(record, dict) and record.get('@type') == 'Product':
-                        album = record.get('name') or album
-                        brand = record.get('brand', {})
-                        if isinstance(brand, dict):artist = brand.get('name') or artist
-                self.music_catalog.put_edition(metadata['album_id'], ordered, album, artist)
+                try:
+                    page = self.album_page(metadata['album_id'])
+                    ordered = auto_catalog.parsed_rows(page, metadata['album_id'])
+                    album_parser = MetaParser(); album_parser.feed(page)
+                    album, artist = metadata.get('album'), metadata.get('artist')
+                    for record in album_parser.structured:
+                        if isinstance(record, dict) and record.get('@type') in ('Product', 'MusicAlbum'):
+                            value = record.get('releaseDate') or record.get('datePublished')
+                            if value:enriched.setdefault('releaseDate', value)
+                        if isinstance(record, dict) and record.get('@type') == 'Product':
+                            album = record.get('name') or album
+                            brand = record.get('brand', {})
+                            if isinstance(brand, dict):artist = brand.get('name') or artist
+                    self.music_catalog.put_edition(metadata['album_id'], ordered, album, artist)
+                except requests.RequestException:
+                    catalog_unavailable = True
+                    LOG.warning('Catalog enrichment unavailable; using current metadata')
+            ordered = ordered or {}
             selected = track.rsplit('/', 1)[-1]
             row = ordered.get(selected)
+            if not row:
+                selected, row = self.reviewed_edition_match(metadata)
             if row:
                 enriched.update(row)
                 work_timing = timing.composition(ordered, selected)
@@ -422,10 +502,12 @@ class Bridge:
             self.music_catalog.document('music_context', {}))
         if connections:
             details = dict(details or {}, connections=connections)
-        # Preserve reviewed local captions even when renderer/file tags are blank.
-        if not metadata.get('album_id'):
-            captions = {'display_album': enriched.get('album'),
-                        'display_artist': enriched.get('albumArtist') or enriched.get('artist')}
+        # Reviewed edition captions also fill sparse Qobuz renderer metadata.
+        reviewed_row = self.reviewed_edition_album(metadata)
+        if not metadata.get('album_id') or reviewed_row:
+            caption_source = reviewed_row or enriched
+            captions = {'display_album': caption_source.get('album'),
+                        'display_artist': caption_source.get('albumArtist') or caption_source.get('artist')}
             captions = {k: v for k, v in captions.items() if v}
             if captions:
                 details = dict(details or {}, **captions)
@@ -435,7 +517,8 @@ class Bridge:
             self.music_catalog.remember(metadata, details)
         except Exception as error:
             LOG.warning('Music catalog observation deferred: %s', type(error).__name__)
-        self.detail_cache[cache_key] = details
+        if not catalog_unavailable:
+            self.detail_cache[cache_key] = details
         return details
 
     def card(self, metadata, details):
@@ -505,6 +588,7 @@ class Bridge:
 
     def cover(self, metadata):
         album_id = metadata.get('album_id')
+        inferred_cover = False
         title = metadata.get('album', '')
         artist = metadata.get('albumArtist') or metadata.get('artist', '')
         if metadata.get('source') == 'roon':
@@ -512,18 +596,44 @@ class Bridge:
         elif metadata.get('source') == 'sonos':
             content = self.sonos.cover(metadata)
         elif album_id:
-            parser = MetaParser()
-            parser.feed(self.album_page(album_id))
-            url = parser.meta.get('og:image', '')
-            title = parser.meta.get('og:title', '').removesuffix(' - Qobuz')
-            for record in parser.structured:
-                if isinstance(record, dict) and record.get('@type') == 'Product':
-                    title = record.get('name') or title
-                    brand = record.get('brand', {})
-                    if isinstance(brand, dict):
-                        artist = brand.get('name') or artist
-            if urlparse(url).hostname != 'static.qobuz.com':
-                raise ValueError('Qobuz cover URL missing or unexpected')
+            reviewed = self.reviewed_edition_album(metadata)
+            title = reviewed.get('album') or title
+            artist = reviewed.get('albumArtist') or reviewed.get('artist') or artist
+            url = reviewed.get('_album_art_url', '')
+            # Verified saved editions must remain useful when the public page is blocked.
+            if not self.qobuz_cover_url(url):
+                parser = MetaParser()
+                try:
+                    parser.feed(self.album_page(album_id))
+                except requests.RequestException:
+                    pass
+                url = parser.meta.get('og:image', '')
+                title = reviewed.get('album') or parser.meta.get('og:title', '').removesuffix(' - Qobuz') or title
+                for record in parser.structured:
+                    if isinstance(record, dict) and record.get('@type') == 'Product':
+                        title = reviewed.get('album') or record.get('name') or title
+                        brand = record.get('brand', {})
+                        if isinstance(brand, dict) and not reviewed:
+                            artist = brand.get('name') or artist
+            if not self.qobuz_cover_url(url):
+                url = metadata.get('albumArtURI', '')
+            if not self.qobuz_cover_url(url):
+                entry = next((e for e in self.state['history']
+                              if e['key'] == self.album_key(metadata)
+                              and (self.root / e['cover']).is_file()), None)
+                if entry:
+                    output = self.root / 'current-cover.jpg'
+                    layouts.current(self.root / entry['cover'], entry['title'], entry.get('artist', ''), output)
+                    self.state['artist'] = entry.get('artist', '')
+                    return output, entry['title']
+                # Qobuz's observed CDN layout encodes the exact edition ID.
+                # This is a candidate image only, never evidence for captions
+                # or track identity. Validate its response before saving it.
+                if not isinstance(album_id, str) or not re.fullmatch(r'[A-Za-z0-9]{4,64}', album_id):
+                    raise ArtworkUnavailable('Current album artwork unavailable')
+                url = (f'https://static.qobuz.com/images/covers/{album_id[-2:]}/'
+                       f'{album_id[-4:-2]}/{album_id}_600.jpg')
+                inferred_cover = True
         else:
             url = self.local_art_url(metadata)
             parsed = urlparse(url)
@@ -539,12 +649,27 @@ class Bridge:
             if not (qobuz_cover or local_cover):
                 raise ValueError('No supported cover URL')
         if metadata.get('source') not in ('roon', 'sonos'):
-            r = self.session.get(url, timeout=15)
-            r.raise_for_status()
-            content = r.content
+            try:
+                r = self.session.get(url, timeout=15, allow_redirects=False) if inferred_cover else self.session.get(url, timeout=15)
+                r.raise_for_status()
+                if inferred_cover and (r.status_code != 200 or
+                        r.headers.get('Content-Type', '').split(';')[0].strip().lower() not in ('image/jpeg', 'image/png', 'image/webp')):
+                    raise ArtworkUnavailable('Current album artwork unavailable')
+                content = r.content
+            except requests.RequestException as error:
+                if inferred_cover:
+                    raise ArtworkUnavailable('Current album artwork unavailable') from error
+                raise
         if len(content) > 20_000_000:
+            if inferred_cover:
+                raise ArtworkUnavailable('Current album artwork unavailable')
             raise ValueError('Cover exceeds size limit')
-        cover = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert('RGB')
+        try:
+            cover = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert('RGB')
+        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            if inferred_cover:
+                raise ArtworkUnavailable('Current album artwork unavailable') from error
+            raise
         key = self.album_key(metadata)
         filename = 'covers/' + hashlib.sha256(key.encode()).hexdigest() + '.jpg'
         cover.save(self.root / filename, quality=95)
@@ -842,7 +967,12 @@ class Bridge:
                 self.state['original'] = current
                 self.save()
             self.phase = 'card-render'
-            image, title = self.card(metadata, details)
+            try:
+                image, title = self.card(metadata, details)
+            except ArtworkUnavailable:
+                # An unidentified new album must not leave the previous album showing.
+                self.restore()
+                return
             self.phase = 'tv-upload'
             content = tv.upload(str(image), matte='none')
             old_album = self.state.get('album_image') or owned

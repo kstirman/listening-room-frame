@@ -99,7 +99,8 @@ def composition(tracks, current):
             return None
         positions = [i for i, (_, row) in enumerate(entries)
                      if row.get('composition_group') == target['composition_group']]
-        if positions != list(range(positions[0], positions[-1] + 1)):
+        if (positions != list(range(positions[0], positions[-1] + 1))
+                and not all(row.get('composition_noncontiguous') is True for _, row in group)):
             return None
         return {'index': next(i for i, (key, _) in enumerate(group) if key == current),
                 'durations': [seconds(row['duration_seconds']) for _, row in group], 'label': 'Part'}

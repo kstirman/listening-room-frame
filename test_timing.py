@@ -16,6 +16,30 @@ def album(durations=('00:08:00', '00:12:00', '00:04:00')):
 
 
 class TimingTests(unittest.TestCase):
+    def test_reviewed_nonadjacent_parts_require_explicit_agreement(self):
+        import copy
+        rows = {
+            '1': dict(title='Part one', work='A work', composer='Composer',
+                      duration_seconds=120, composition_group='work',
+                      composition_index=1, composition_count=2,
+                      _edition_verified='edition', _catalog_album_id='edition'),
+            '2': dict(title='Another song', duration_seconds=90),
+            '3': dict(title='Part two', work='A work', composer='Composer',
+                      duration_seconds=180, composition_group='work',
+                      composition_index=2, composition_count=2,
+                      _edition_verified='edition', _catalog_album_id='edition')}
+        self.assertIsNone(timing.composition(rows, '1'))
+        rows['1']['composition_noncontiguous'] = True
+        self.assertIsNone(timing.composition(rows, '1'))
+        rows['3']['composition_noncontiguous'] = True
+        self.assertEqual(timing.composition(rows, '3'),
+                         {'index': 1, 'durations': [120, 180], 'label': 'Part'})
+        self.assertIsNone(timing.composition(rows, '2'))
+        for field, value in [('_edition_verified', 'other'), ('composition_index', 1),
+                             ('composer', 'Other'), ('_work_complete', False)]:
+            bad = copy.deepcopy(rows); bad['3'][field] = value
+            self.assertIsNone(timing.composition(bad, '1'))
+
     def test_complete_edition_of_excerpts_is_not_a_complete_work(self):
         import copy
         import classical

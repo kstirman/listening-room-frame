@@ -27,6 +27,19 @@ def years(value):
     return ', '.join(found)
 
 
+def recording_years(value):
+    """Keep separately supplied recording sessions without widening their span.
+
+    Parse each semicolon-delimited session independently so an earlier range
+    cannot consume a later ISO date. Shared work/release parsing stays unchanged.
+    """
+    value = str(value or '')
+    if ';' not in value:
+        return years(value)
+    parts = [years(part) for part in value.split(';')]
+    return '; '.join(dict.fromkeys(part for part in parts if part))
+
+
 def composition_years(value):
     """Keep work labels when a track combines separately dated compositions."""
     value=str(value or '').strip()
@@ -85,12 +98,12 @@ def catalog_fields(metadata, registry):
 
 def extract(metadata, classical=None, work_registry=None, recording_registry=None):
     result={}
-    recording=years(metadata.get('recordingDate'))
+    recording=recording_years(metadata.get('recordingDate'))
     if not recording:
         # Only a explicitly labelled live/recorded bracket, never the whole title.
         for block in re.findall(r'\[([^]]+)\]',metadata.get('title','')):
             if re.match(r'(?:Live\b|Recorded\b)',block,re.I) and not re.search('remaster|reissue',block,re.I):
-                recording=years(block)
+                recording=recording_years(block)
                 if recording:break
     if recording:result['recording_year']=recording
     if not recording:

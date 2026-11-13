@@ -7,6 +7,7 @@ SQLite indexes exact aliases for bounded, conservative playback lookup.
 from contextlib import closing, contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import functools
+import encounter_captions
 import hashlib
 import itertools
 import json
@@ -97,6 +98,12 @@ class Store:
             db.executescript(SCHEMA)
             with db:
                 yield db
+
+    @available({})
+    def encountered_album(self, metadata):
+        """Return vetted exact-ID album captions, without asserting a track match."""
+        with self.connect() as db:
+            return encounter_captions.encountered_album(db, metadata)
 
     def migrate(self, old):
         """Idempotent copy; never delete or mutate the legacy cache."""

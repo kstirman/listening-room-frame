@@ -504,20 +504,22 @@ class Bridge:
             details = dict(details or {}, connections=connections)
         # Reviewed edition captions also fill sparse Qobuz renderer metadata.
         reviewed_row = self.reviewed_edition_album(metadata)
-        if not metadata.get('album_id') or reviewed_row:
-            caption_source = reviewed_row or enriched
-            captions = {'display_album': caption_source.get('album'),
-                        'display_artist': caption_source.get('albumArtist') or caption_source.get('artist')}
-            captions = {k: v for k, v in captions.items() if v}
-            if captions:
-                details = dict(details or {}, **captions)
+        caption_source = dict(enriched)
+        if metadata.get('album_id') and not reviewed_row:
+            caption_source.update(self.music_catalog.encountered_album(enriched))
+        caption_source.update({k: v for k, v in reviewed_row.items() if v})
+        captions = {'display_album': caption_source.get('album'),
+                    'display_artist': caption_source.get('albumArtist') or caption_source.get('artist')}
+        captions = {k: v for k, v in captions.items() if v}
+        if captions:
+            details = dict(details or {}, **captions)
         if len(self.detail_cache) >= 128:
             self.detail_cache.pop(next(iter(self.detail_cache)))
         try:
             self.music_catalog.remember(metadata, details)
         except Exception as error:
             LOG.warning('Music catalog observation deferred: %s', type(error).__name__)
-        if not catalog_unavailable:
+        if not catalog_unavailable and (not metadata.get('album_id') or reviewed_row):
             self.detail_cache[cache_key] = details
         return details
 

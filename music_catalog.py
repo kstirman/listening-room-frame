@@ -351,7 +351,7 @@ class Store:
         This is an intake record, not evidence of a verified recording match.
         No expiry or count-based eviction applies to these private records.
         """
-        if metadata.get('source') == 'spotify' or not metadata.get('album'):
+        if metadata.get('source') == 'spotify':
             return
         album_id = metadata.get('album_id')
         if not album_id:
@@ -362,23 +362,42 @@ class Store:
                 album_id = match[1]
         if album_id and not re.fullmatch(r'[A-Za-z0-9]{1,64}', str(album_id)):
             album_id = None
+        if not album_id and not metadata.get('album'):
+            return
         fields = {k: metadata[k] for k in ('album', 'artist', 'albumArtist', 'title',
-                  'composer', 'genre', 'duration_seconds', 'source') if metadata.get(k) is not None}
+                  'composer', 'genre', 'duration_seconds', 'source') if metadata.get(k) not in (None, '')}
         if album_id:
             fields['album_id'] = str(album_id)
         # An artwork-derived ID is a discovery candidate, not verified metadata.
         fields['identity_status'] = 'candidate' if album_id else 'unresolved'
         album_key = 'qobuz:' + str(album_id) if album_id else 'unresolved:' + hashlib.sha256(
             json.dumps([fields.get(k) for k in ('source', 'album', 'artist')], ensure_ascii=False).encode()).hexdigest()
-        identity = hashlib.sha256(json.dumps([album_key, fields.get('title'),
-            timing.seconds(fields.get('duration_seconds'))], ensure_ascii=False).encode()).hexdigest()
+        fields = {k:v for k,v in fields.items() if not isinstance(v, str) or v.strip()}
+        if 'duration_seconds' in fields and not timing.seconds(fields['duration_seconds']):
+            fields.pop('duration_seconds')
+        # Keep only a recognized provider object ID, never an opaque URL/token.
+        object_id = metadata.get('object_id')
+        if album_id and isinstance(object_id, str) and re.fullmatch(r'qobuz/track/[0-9]{1,20}', object_id):
+            fields['object_id'] = object_id
+            identity_parts = [album_key, object_id]
+        else:
+            identity_parts = [album_key, fields.get('title'), timing.seconds(fields.get('duration_seconds'))]
+        identity = hashlib.sha256(json.dumps(identity_parts, ensure_ascii=False).encode()).hexdigest()
         now = time.time()
         with self.connect() as db:
+            album_fields = {k:v for k,v in fields.items() if k not in ('title','duration_seconds','object_id')}
+            previous = db.execute('SELECT payload FROM encountered_albums WHERE identity=?', (album_key,)).fetchone()
+            if previous:
+                album_fields = {**json.loads(previous[0]), **album_fields}
             db.execute('INSERT INTO encountered_albums VALUES(?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET last_seen=excluded.last_seen, payload=excluded.payload',
-                       (album_key, album_id, now, now, json.dumps({k:v for k,v in fields.items() if k not in ('title','duration_seconds')})))
-            if fields.get('title'):
+                       (album_key, album_id, now, now, json.dumps(album_fields)))
+            if fields.get('title') or fields.get('object_id'):
+                previous = db.execute('SELECT payload FROM encountered_tracks WHERE identity=?', (identity,)).fetchone()
+                if previous:
+                    fields = {**json.loads(previous[0]), **fields}
                 db.execute('INSERT INTO encountered_tracks VALUES(?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET last_seen=excluded.last_seen, payload=excluded.payload',
                            (identity, album_key, now, now, json.dumps(fields)))
+
 
 
 def tag_fields(tags):

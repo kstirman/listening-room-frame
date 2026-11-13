@@ -21,6 +21,7 @@ import local_match
 import local_composition
 import library_metadata
 import auto_catalog
+import cover_evidence
 import music_catalog
 import music_context
 import reviewed_catalog
@@ -156,7 +157,68 @@ class Bridge:
         self.state.setdefault('history', [])
         (self.root / 'covers').mkdir(exist_ok=True)
         self.normalize_history()
+        self.evidence_archive = None
+        if config.get('cover_evidence_root') and config.get('cover_evidence_mount'):
+            self.evidence_archive = cover_evidence.Archive(config['cover_evidence_root'], config['cover_evidence_mount'])
+            self.evidence_backfill()
 
+
+
+    def preserve_cover_evidence(self, entry):
+        archive = getattr(self, 'evidence_archive', None)
+        if archive is None or not entry.get('key', '').startswith('qobuz:'):
+            return True
+        try:
+            path = self.root / entry['cover']
+            if path.is_symlink() or path.resolve().parent != (self.root / 'covers').resolve():
+                raise ValueError('Unsafe cached cover path')
+            archive.preserve(entry['key'], path.read_bytes(), entry.get('artwork_url'))
+            return True
+        except Exception as error:
+            LOG.warning('Cover evidence preservation unavailable: %s', type(error).__name__)
+            return False
+
+    def evidence_unlink(self, entry):
+        # Pending JSON is private state, not authority to delete arbitrary files.
+        name = entry.get('cover')
+        if not isinstance(name, str):
+            return False
+        path = self.root / name
+        covers = self.root / 'covers'
+        if (path.is_symlink() or covers.is_symlink() or
+                path.resolve().parent != covers.resolve()):
+            return False
+        references = {e.get('cover') for e in self.state.get('history', [])}
+        references.add(getattr(self, '_evidence_transient', {}).get('cover'))
+        if any(isinstance(ref, str) and (self.root / ref).resolve() == path.resolve() for ref in references):
+            return False
+        path.unlink(missing_ok=True)
+        return True
+
+    def evidence_backfill(self):
+        pending = []
+        history = self.state.get('history', [])
+        for entry in history + self.state.get('evidence_pending', []):
+            if not self.preserve_cover_evidence(entry):
+                if not any(e.get('cover') == entry.get('cover') for e in pending):
+                    pending.append(entry)
+            else:
+                self.evidence_unlink(entry)
+        self.state['evidence_pending'] = pending
+        self.save()
+
+    def evidence_evict(self, removed):
+        if getattr(self, 'evidence_archive', None) is None:
+            for entry in removed:
+                self.evidence_unlink(entry)
+            return
+        pending = self.state.setdefault('evidence_pending', [])
+        for entry in removed:
+            if self.preserve_cover_evidence(entry):
+                self.evidence_unlink(entry)
+            elif not any(e.get('cover') == entry.get('cover') for e in pending):
+                pending.append(entry)
+        self.save()
 
     def save(self):
         temp = self.state_file.with_suffix('.tmp')
@@ -539,12 +601,16 @@ class Bridge:
             return output, metadata.get('album', '')
         album = self.album_key(metadata)
         entry = next((e for e in self.state['history'] if e['key'] == album), None)
+        if entry is None and getattr(self, '_evidence_transient', {}).get('key') == album:
+            entry = self._evidence_transient
         refreshed_art = (entry is not None and self.config.get('library_root')
                          and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/')
                          and entry.get('artwork_url') != self.local_art_url(metadata))
         if album != self.state.get('album') or entry is None or refreshed_art:
             image, title = self.cover(metadata)
             entry = next((e for e in self.state['history'] if e['key'] == album), None)
+            if entry is None and getattr(self, '_evidence_transient', {}).get('key') == album:
+                entry = self._evidence_transient
         else:
             image, title = self.root / 'current-cover.jpg', entry['title']
         if metadata.get('source') in ('roon', 'sonos') and entry:
@@ -674,16 +740,44 @@ class Bridge:
             raise
         key = self.album_key(metadata)
         filename = 'covers/' + hashlib.sha256(key.encode()).hexdigest() + '.jpg'
+        if getattr(self, 'evidence_archive', None) and key.startswith('qobuz:'):
+            self.evidence_backfill()
+            encoded = io.BytesIO()
+            cover.save(encoded, format='JPEG', quality=95)
+            content = encoded.getvalue()
+            filename = 'covers/' + hashlib.sha256(key.encode()).hexdigest() + '-' + hashlib.sha256(content).hexdigest() + '.jpg'
+            durable = False
+            try:
+                self.evidence_archive.preserve(key, content, url)
+                durable = True
+            except Exception as error:
+                LOG.warning('Cover evidence preservation unavailable: %s', type(error).__name__)
+            cache_bytes = sum(p.stat().st_size for p in (self.root / 'covers').glob('*.jpg') if p.is_file())
+            # Existing unarchived bytes are never evicted for lack of archive.
+            # During an outage, new covers above the bounded cache budget are
+            # transient display images; retention failure remains explicit.
+            if not durable and cache_bytes + len(content) > 16 * 1024 * 1024:
+                transient = self.root / 'evidence-transient.jpg'
+                transient.write_bytes(content)
+                self._evidence_transient = {'key': key, 'cover': transient.name,
+                    'title': title, 'artist': artist, 'artwork_url': None}
+                self.state['evidence_status'] = 'unavailable_cache_budget_reached'
+                self.save()
+                output = self.root / 'current-cover.jpg'
+                layouts.current(transient, title, artist, output)
+                return output, title
+            self.state['evidence_status'] = 'preserved' if durable else 'pending'
         cover.save(self.root / filename, quality=95)
         history = [entry for entry in self.state['history'] if entry['key'] != key]
         history.insert(0, {'key': key, 'cover': filename, 'title': title, 'artist': artist,
                            'artwork_url': url if metadata.get('source') not in ('roon', 'sonos') else None})
         removed = history[self.config.get('history_limit', 28):]
+        if getattr(self, 'evidence_archive', None):
+            removed += [e for e in self.state['history'] if e['key'] == key and e['cover'] != filename]
         self.state['history'] = history[:self.config.get('history_limit', 28)]
         self.state['artist'] = artist
         self.save()
-        for entry in removed:
-            (self.root / entry['cover']).unlink(missing_ok=True)
+        self.evidence_evict(removed)
         output = self.root / 'current-cover.jpg'
         layouts.current(self.root / filename, title, artist, output)
         return output, title

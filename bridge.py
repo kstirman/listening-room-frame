@@ -896,9 +896,27 @@ class Bridge:
                      fingerprint(metadata.get('object_id') or metadata.get('resource')),
                      fingerprint(self.album_key(metadata)),
                      getattr(self, '_media_fingerprint', fingerprint(metadata.get('resource'))))
-        if signature != getattr(self, '_last_playback_signature', None):
-            if status == 'PLAYING' and getattr(self, 'music_catalog', None) is not None:
-                self.music_catalog.encounter(metadata)
+        changed = signature != getattr(self, '_last_playback_signature', None)
+        encounter = getattr(getattr(self, 'music_catalog', None), 'encounter', None)
+        if status == 'PLAYING' and callable(encounter):
+            # Providers can fill in names after sending a sparse playback ID.
+            # Retry failed storage without tying persistence to playback changes.
+            fields = ('album_id', 'object_id', 'album', 'artist', 'albumArtist',
+                      'title', 'composer', 'genre', 'duration_seconds', 'source')
+            intake = (signature, auto_catalog.artwork_edition(metadata.get('albumArtURI')),
+                      fingerprint(json.dumps(
+                          {key: metadata.get(key) for key in fields}, sort_keys=True)))
+            now = time.monotonic()
+            if ((changed or intake != getattr(self, '_last_encounter_saved', None)) and
+                    (intake != getattr(self, '_last_encounter_attempt', None) or
+                     now >= getattr(self, '_encounter_retry_at', 0))):
+                self._last_encounter_attempt = intake
+                if encounter(metadata) is True:
+                    self._last_encounter_saved = intake
+                    self._encounter_retry_at = 0
+                else:
+                    self._encounter_retry_at = now + 30
+        if changed:
             LOG.info('Playback changed: state=%s track=%s album=%s media=%s', *signature)
             self._last_playback_signature = signature
 

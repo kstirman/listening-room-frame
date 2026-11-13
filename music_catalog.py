@@ -359,7 +359,7 @@ class Store:
         No expiry or count-based eviction applies to these private records.
         """
         if metadata.get('source') == 'spotify':
-            return
+            return True
         album_id = metadata.get('album_id')
         if not album_id:
             from urllib.parse import urlparse
@@ -370,7 +370,7 @@ class Store:
         if album_id and not re.fullmatch(r'[A-Za-z0-9]{1,64}', str(album_id)):
             album_id = None
         if not album_id and not metadata.get('album'):
-            return
+            return True
         fields = {k: metadata[k] for k in ('album', 'artist', 'albumArtist', 'title',
                   'composer', 'genre', 'duration_seconds', 'source') if metadata.get(k) not in (None, '')}
         if album_id:
@@ -404,6 +404,7 @@ class Store:
                     fields = {**json.loads(previous[0]), **fields}
                 db.execute('INSERT INTO encountered_tracks VALUES(?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET last_seen=excluded.last_seen, payload=excluded.payload',
                            (identity, album_key, now, now, json.dumps(fields)))
+        return True
 
 
 

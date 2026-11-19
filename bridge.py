@@ -611,6 +611,7 @@ class Bridge:
         except (OSError, ValueError, sqlite3.Error):
             LOG.warning('Independent metadata temporarily unavailable')
         work_timing = None
+        reviewed_display_title = None
         catalog_unavailable = False
         local_status = None
         local_resource = None
@@ -661,6 +662,13 @@ class Bridge:
                 selected, row = self.reviewed_edition_match(metadata)
             if row:
                 enriched.update(row)
+                # A reviewed spelling correction changes presentation only, after
+                # exact-edition track selection; never use it as a matching alias.
+                canonical = row.get('_canonical_title')
+                if (row.get('_edition_verified') == metadata['album_id']
+                        and row.get('_catalog_album_id') == metadata['album_id']
+                        and isinstance(canonical, str) and canonical.strip()):
+                    reviewed_display_title = canonical.strip()
                 work_timing = timing.composition(ordered, selected)
             if cache_first and self.config.get('qobuz_metadata_enabled', True):
                 enriched = persistent_metadata.merge_missing(enriched, self.reviewed_edition_album(metadata))
@@ -736,7 +744,7 @@ class Bridge:
             details = dict(details or {}, liner_notes=notes)
         if catalog_status:
             details = dict(details or {}, catalog_status=catalog_status)
-        track_title = enriched.get('title') or metadata.get('title')
+        track_title = reviewed_display_title or enriched.get('title') or metadata.get('title')
         if track_title:
             details = dict(details or {}, display_track=track_title)
         duration = timing.seconds(enriched.get('duration_seconds'))

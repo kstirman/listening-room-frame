@@ -103,7 +103,7 @@ class ExternalCatalogCacheTests(unittest.TestCase):
                 thread.assert_not_called()
                 r.get.assert_not_called()
 
-    def test_stale_saved_revalidation_does_not_reschedule_or_extend_refresh(self):
+    def test_saved_catalog_never_refreshes_due_to_age(self):
         import time
         from unittest.mock import patch
         from auto_catalog import Resolver, album_rows
@@ -123,5 +123,5 @@ class ExternalCatalogCacheTests(unittest.TestCase):
                 thread.assert_not_called()
                 with patch('auto_catalog.time.monotonic',return_value=started+1801):
                     self.assertEqual(r.lookup(META)[1],'matched')
-                thread.assert_called_once()
+                thread.assert_not_called()
                 r.get.assert_not_called()

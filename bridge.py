@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sqlite3
 import time
 from html.parser import HTMLParser
 from urllib.parse import urlparse
@@ -24,6 +25,7 @@ import auto_catalog
 import cover_evidence
 import source_outcomes
 import music_catalog
+import persistent_metadata
 import music_context
 import programme_context
 import reviewed_catalog
@@ -150,6 +152,8 @@ class Bridge:
         except Exception as error:
             LOG.warning('Music catalog import deferred: %s', type(error).__name__)
         self.auto_catalog = auto_catalog.Resolver(cache_path=self.music_catalog.path)
+        self.independent_catalog = persistent_metadata.Resolver(
+            self.music_catalog.path, enabled=config.get("musicbrainz_enabled", False))
         self.photo_stream = Stream(config) if config.get("photo_stream_enabled", False) else None
         self.local_index = {}
         self.index_at = 0
@@ -423,6 +427,8 @@ class Bridge:
             write(album_id, outcome)
 
     def album_page(self, album_id):
+        if not self.config.get('qobuz_metadata_enabled', True):
+            raise requests.RequestException('Qobuz metadata disabled; using permanent local catalog')
         previous = self.source_outcome(album_id)
         now = time.time()
         due = previous and previous.get('category') == 'transient' and now >= previous.get('next_retry_at', float('inf'))
@@ -457,6 +463,7 @@ class Bridge:
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
         self.music_catalog.refresh(self.config, Path(__file__).parent)
         automatic = (not metadata.get('album_id') and
+                     self.config.get('qobuz_metadata_enabled', True) and
                      self.config.get('auto_catalog', True) and
                      (urlparse(metadata.get('resource', '')).path.startswith('/audirvana/') or
                       self.config.get('auto_catalog_other_upnp', False)))
@@ -473,6 +480,11 @@ class Bridge:
         if cache_key in self.detail_cache:
             return self.detail_cache[cache_key]
         enriched = dict(metadata)
+        try:
+            saved = self.independent_catalog.lookup(metadata)
+            enriched = persistent_metadata.merge_missing(enriched, saved)
+        except (OSError, ValueError, sqlite3.Error):
+            LOG.warning('Independent metadata temporarily unavailable')
         work_timing = None
         catalog_unavailable = False
         local_status = None
@@ -491,7 +503,7 @@ class Bridge:
         if metadata.get('album_id'):
             ordered = self.music_catalog.edition(metadata['album_id'])
             import catalog_pages
-            if not ordered or catalog_pages.needs_refresh(ordered):
+            if self.config.get('qobuz_metadata_enabled', True) and (not ordered or catalog_pages.needs_refresh(ordered)):
                 prior_ordered = ordered
                 try:
                     page = self.album_page(metadata['album_id'])

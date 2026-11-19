@@ -598,3 +598,5 @@ source documents, restore instructions and SHA-256 checksums. They exclude audio
 photos and application configuration. Keep both outputs private. The backup command
 refuses to overwrite an existing archive; scheduling and private cloud upload are
 separate deployment responsibilities.
+
+Saved music metadata is permanent. See [JPLAY imports and independent metadata](PERSISTENT-METADATA.md) for MusicBrainz enrichment, offline reuse and local Discogs imports.

@@ -145,7 +145,8 @@ class Store:
                     fields.setdefault('_provenance', 'saved public catalog')
             # Keep original source fields on disk; apply current grouping rules
             # when reading saved editions so fixes do not require a refetch.
-            return [self.dated_rows(rows) for rows in albums], not 0 <= time.time()-row[0] < 7*86400
+            # Saved musical facts never become stale merely because time passes.
+            return [self.dated_rows(rows) for rows in albums], False
         except (OSError, sqlite3.Error, ValueError, TypeError):
             return None
 

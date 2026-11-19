@@ -119,7 +119,7 @@ class AutomaticCatalogTests(unittest.TestCase):
             first.lookup(META);self.wait(first)
             self.assertEqual(Resolver(Mock(),cache_path=path).lookup(META)[1],'ambiguous')
 
-    def test_old_catalog_is_immediate_and_failed_refresh_preserves_it(self):
+    def test_old_catalog_is_permanent_without_a_refresh(self):
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/'catalog-cache.sqlite3'
             first=Resolver(Mock(side_effect=[search(),page()]),cache_path=path)
@@ -131,7 +131,7 @@ class AutomaticCatalogTests(unittest.TestCase):
                 raise RuntimeError('Temporary catalog outage')
             restarted=Resolver(unavailable,cache_path=path)
             self.assertEqual(restarted.lookup(META)[1],'matched')
-            self.assertTrue(restarted.busy)
+            self.assertFalse(restarted.busy)
             gate.set();self.wait(restarted)
             self.assertEqual(restarted.lookup(META)[1],'matched')
             self.assertEqual(restarted.lookup(dict(META,duration_seconds=900))[1],'track_mismatch')

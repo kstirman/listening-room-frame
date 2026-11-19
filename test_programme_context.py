@@ -16,6 +16,30 @@ class Tests(unittest.TestCase):
    self.assertNotIn('composition_year',d);self.assertNotIn('composition',d)
    other=b.details({'title':'Other recital','classical':True,'note':'Sonata (1825)'})
    self.assertNotIn('programme_context',other)
+ def test_normal_path_announcements_and_source_only(self):
+  with tempfile.TemporaryDirectory() as t:
+   p=Path(t);Image.new('RGB',(600,600),(45,90,135)).save(p/'cover.png')
+   b=Bridge({'auto_catalog':False},t)
+   for status in [None, 'candidate', 'verified_local_announcements_three_works_unsegmented', 'verified_local_announcements_five_works_unsegmented', ['malformed']]:
+    fields={'title':'Combined recital','classical':True,'programme_context':copy.deepcopy(CONTEXT)}
+    if status is not None: fields['_programme_context_status']=status
+    details=b.details(fields)
+    confirmed=isinstance(status,str) and status in programme_context.VERIFIED_ANNOUNCEMENTS
+    expected=programme_context.ANNOUNCEMENTS_CAVEAT if confirmed else programme_context.CAVEAT
+    self.assertEqual(programme_context.caveat(programme_context.extract(details)),expected)
+    self.assertNotIn('composition',details);self.assertNotIn('composition_year',details)
+    for kind in ['classical','liner']:
+     calls=[];original=layouts.Column.block
+     def record(column,value,*args,**kw):
+      start=column.y; result=original(column,value,*args,**kw);calls.append((value,start,column.y,column.bottom));return result
+     with patch.object(layouts.Column,'block',record):
+      if kind=='classical': layouts.classical(p/'cover.png',details,p/'out.png')
+      else: layouts.liner(p/'cover.png','Combined recital','Example Performer',p/'out.png',details)
+     values=[x[0] for x in calls];self.assertIn(expected,values)
+     other=programme_context.CAVEAT if confirmed else programme_context.ANNOUNCEMENTS_CAVEAT
+     self.assertNotIn(other,values)
+     for value,start,end,bottom in calls:
+      if value==expected or value=='Example Variations · 1903': self.assertLessEqual(end,bottom)
  def test_rejects_silent_truncation_and_unsafe_sources(self):
   for change in [{'rows':CONTEXT['rows']*2},{'rows':[{'work':'X'*44,'year':'1900'}]},{'sources':['file:///secret']},{'status':'candidate'},{'rows':[{'work':'Work','year':1900}]}]:
    value=dict(CONTEXT,**change);self.assertIsNone(programme_context.extract({'programme_context':value}))

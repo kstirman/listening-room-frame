@@ -159,7 +159,7 @@ def collage(history, root, output):
 def programme(column, context):
     """Keep the coverage caveat separate and ahead of compact work/date rows."""
     column.block(programme_context.LABEL, 40, (221,190,135), 1, 14)
-    column.block(programme_context.CAVEAT, 52, (214,210,198), 2, 18)
+    column.block(programme_context.caveat(context), 52, (214,210,198), 2, 18)
     for row in context['rows']:
         column.block(row['work']+' · '+row['year'], 52, lines=1, gap=10)
 

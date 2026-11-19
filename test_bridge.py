@@ -198,6 +198,49 @@ class Tests(unittest.TestCase):
   self.assertEqual(self.b.reviewed_edition_album(metadata)['album'],'Album')
   rows.pop('2')
   self.assertEqual(self.b.reviewed_edition_row(metadata),{})
+ def test_ordinal_title_disambiguates_equal_durations_and_restores_timing(self):
+  base={'album':'Album','albumArtist':'Ensemble','duration_seconds':200,
+   '_catalog_album_id':'abc','_edition_verified':'abc','_catalog_complete':True,
+   '_catalog_expected_tracks':2,'work':'Quartet','composer':'Composer',
+   'composition_group':'abc-quartet','composition_count':2}
+  rows={'1':dict(base,title='I. Allegro',composition_index=1),
+        '2':dict(base,title='II. Adagio',composition_index=2)}
+  self.b.music_catalog.edition=Mock(return_value=rows)
+  metadata={'album_id':'abc','object_id':'qobuz/track/987654',
+            'duration_seconds':200,'title':'II. Adagio'}
+  self.assertEqual(self.b.reviewed_edition_match(metadata)[0],'2')
+  self.b.album_page=Mock(side_effect=AssertionError('complete saved edition'))
+  result=Bridge.details(self.b,metadata)
+  self.assertEqual(result['composition'],__import__('timing').composition(rows,'2'))
+  self.b.album_page.assert_not_called()
+  for title in [None,'','   ','Other movement']:
+   self.assertEqual(self.b.reviewed_edition_match(dict(metadata,title=title)),(None,{}))
+  rows['1']['title']=None
+  self.assertEqual(self.b.reviewed_edition_match(metadata)[0],'2')
+  rows['1']['title']=' II.  ADAGIO '
+  self.assertEqual(self.b.reviewed_edition_match(metadata),(None,{}))
+ def test_ordinal_titles_normalize_whitespace_without_losing_version_identity(self):
+  base={'_catalog_album_id':'abc','_edition_verified':'abc','_catalog_complete':True,
+        '_catalog_expected_tracks':2}
+  rows={'1':dict(base,title='Song (Live at Venue, City)',duration_seconds=200),
+        '2':dict(base,title='Song (Studio)',duration_seconds=201)}
+  self.b.music_catalog.edition=Mock(return_value=rows)
+  metadata={'album_id':'abc','object_id':'qobuz/track/987654','duration_seconds':200,
+            'title':'  SONG  (Live at Venue,\t City)\u00a0'}
+  self.assertEqual(self.b.reviewed_edition_match(metadata)[0],'1')
+  for title in ['Song (Studio)','Song','Song (Live at Venue City)']:
+   self.assertEqual(self.b.reviewed_edition_match(dict(metadata,title=title)),(None,{}))
+  self.assertEqual(self.b.reviewed_edition_match(dict(metadata,duration_seconds=201)),(None,{}))
+  rows['2']['_edition_verified']='other'
+  self.assertEqual(self.b.reviewed_edition_match(metadata),(None,{}))
+  rows['2']['_edition_verified']='abc';rows['2']['_catalog_album_id']='other'
+  self.assertEqual(self.b.reviewed_edition_match(metadata),(None,{}))
+  rows['2']['_catalog_album_id']='abc';rows.pop('2')
+  self.assertEqual(self.b.reviewed_edition_match(metadata),(None,{}))
+ def test_exact_provider_id_still_precedes_ordinal_matching(self):
+  row={'title':'Part','duration_seconds':200,'_catalog_album_id':'abc','_edition_verified':'abc'}
+  self.b.music_catalog.edition=Mock(return_value={'987654':row})
+  self.assertEqual(self.b.reviewed_edition_match({'album_id':'abc','object_id':'qobuz/track/987654'}),('987654',row))
  def test_album_cover_survives_unknown_track_but_conflicting_album_fields_do_not(self):
   import io
   from PIL import Image

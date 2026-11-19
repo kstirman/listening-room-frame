@@ -378,8 +378,9 @@ class Bridge:
         selected = (metadata.get('object_id') or '').rsplit('/', 1)[-1]
         if selected in verified:
             return selected, verified[selected]
-        # Ordinal-only captures have no provider track IDs. Match only an exact,
-        # unique duration across a complete verified edition, never a near match.
+        # Ordinal-only captures have no provider track IDs. Require an exact
+        # duration and, when supplied, title within a complete verified edition.
+        # Select only a unique candidate; never use a near-duration match.
         import catalog_pages
         duration = timing.seconds(metadata.get('duration_seconds'))
         if (not duration or not rows or len(verified) != len(rows)
@@ -389,12 +390,13 @@ class Bridge:
             return None, {}
         matches = [(key, row) for key, row in verified.items()
                    if timing.seconds(row.get('duration_seconds')) == duration]
+        title = " ".join((metadata.get('title') or '').split()).casefold()
+        if title:
+            matches = [(key, row) for key, row in matches
+                       if " ".join((row.get('title') or '').split()).casefold() == title]
         if len(matches) != 1:
             return None, {}
-        key, row = matches[0]
-        if metadata.get('title') and metadata['title'].strip().casefold() != row.get('title', '').strip().casefold():
-            return None, {}
-        return key, row
+        return matches[0]
 
     def reviewed_edition_row(self, metadata):
         return self.reviewed_edition_match(metadata)[1]

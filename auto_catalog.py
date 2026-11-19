@@ -211,7 +211,7 @@ class Resolver:
             self.revision += 1
             self.busy = False
 
-    def lookup(self, metadata):
+    def lookup(self, metadata, allow_network=True):
         album, artist = metadata.get('album'), metadata.get('artist')
         if not album or not artist or not metadata.get('title') or not timing.seconds(metadata.get('duration_seconds')):
             return None, 'insufficient'
@@ -246,12 +246,14 @@ class Resolver:
                         self.cache.pop(next(iter(self.cache)))
                     # Disk revalidation must not extend the existing retry/refresh TTL.
                     self.cache[key] = (cached[0] if fresh else time.monotonic(), albums, status)
-                    if stale and not fresh and not self.busy:
+                    if allow_network and stale and not fresh and not self.busy:
                         self.busy = True
                         threading.Thread(target=self._run, args=(key, album, artist, True), daemon=True).start()
                 elif fresh:
                     # Unrelated writes must not defeat negative-result cooldowns.
                     _, albums, status = cached
+                elif not allow_network:
+                    return None, 'unmatched'
                 elif not self.busy:
                     self.busy = True
                     threading.Thread(target=self._run, args=(key, album, artist), daemon=True).start()

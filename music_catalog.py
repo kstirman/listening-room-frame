@@ -117,6 +117,21 @@ class Store:
         with self.connect() as db:
             return encounter_captions.encountered_album(db, metadata)
 
+    @available({})
+    def encountered_track(self, metadata):
+        album_id, obj = metadata.get('album_id'), metadata.get('object_id', '')
+        if not album_id or not re.fullmatch(r'qobuz/track/[0-9]{1,20}', obj):
+            return {}
+        key = 'qobuz:' + album_id
+        identity = hashlib.sha256(json.dumps([key, obj], ensure_ascii=False).encode()).hexdigest()
+        with self.connect() as db:
+            row = db.execute('SELECT payload FROM encountered_tracks WHERE identity=? AND album_identity=?',
+                             (identity, key)).fetchone()
+        fields = json.loads(row[0]) if row else {}
+        if fields.get('album_id') != album_id or fields.get('object_id') != obj:
+            return {}
+        return {k: fields[k] for k in ('album', 'artist', 'albumArtist', 'title', 'duration_seconds') if fields.get(k)}
+
     def migrate(self, old):
         """Idempotent copy; never delete or mutate the legacy cache."""
         if not Path(old).is_file():

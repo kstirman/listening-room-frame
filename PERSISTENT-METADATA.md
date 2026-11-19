@@ -66,3 +66,11 @@ track-specific credits remain available as evidence for review.
 
 References: [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API),
 [rate limits](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
+
+With `qobuz_metadata_enabled` and `qobuz_cache_first` both true, the display
+checks the renderer, JPLAY, saved editions and exact track encounters for album,
+artist, track title and duration. A missing caption or duration can trigger an
+exact-edition Qobuz request. The returned album and tracks are retained in the
+permanent catalog. Existing values take priority. Optional credits and dates
+from that response can fill empty fields. Missing optional credits alone do
+not start a network request. Previously denied requests stay deferred.

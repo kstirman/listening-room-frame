@@ -451,6 +451,46 @@ class Bridge:
         self.pages[album_id] = page
         return page
 
+    def fill_qobuz_gaps(self, metadata, fields):
+        """Reuse an exact release response across tracks and restarts."""
+        album_id = metadata['album_id']
+        if not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
+            return fields
+        complete = (fields.get('album') and (fields.get('albumArtist') or fields.get('artist'))
+                    and fields.get('title') and timing.seconds(fields.get('duration_seconds')))
+        cache = self.independent_catalog.cache
+        source = 'qobuz-fallback'
+        record = cache.get(source, album_id)
+        if record is None:
+            if complete:
+                return fields
+            try:
+                page = self.album_page(album_id)
+            except requests.RequestException:
+                return fields
+            products = [item for item in auto_catalog.records(page)
+                        if item.get('@type') == 'Product' and str(item.get('sku')) == album_id]
+            if len(products) != 1:
+                self.record_source_outcome(album_id, {'category': 'pending_identity_conflict'})
+                self.pages.pop(album_id, None)
+                return fields
+            product = products[0]
+            brand = product.get('brand')
+            header = {'album': product.get('name'), 'albumArtist': brand.get('name') if isinstance(brand, dict) else None,
+                      'releaseDate': product.get('releaseDate') or product.get('datePublished')}
+            record = {'album': header, 'tracks': auto_catalog.parsed_rows(page, album_id)}
+            cache.write([(source, album_id, record)])
+        header = dict(record['album'])
+        if fields.get('artist') or fields.get('albumArtist'):
+            header.pop('albumArtist', None)
+        result = persistent_metadata.merge_missing(fields, header)
+        track_id = re.fullmatch(r'qobuz/track/([0-9]+)', metadata.get('object_id', ''))
+        row = record['tracks'].get(track_id[1], {}) if track_id else {}
+        if (row and (not fields.get('title') or auto_catalog.canonical(fields['title']) == auto_catalog.canonical(row.get('title')))
+                and (not fields.get('duration_seconds') or timing.seconds(fields['duration_seconds']) == timing.seconds(row.get('duration_seconds')))):
+            result = persistent_metadata.merge_missing(result, {k:v for k,v in row.items() if not k.startswith('_')})
+        return result
+
     def details(self, metadata):
         if metadata.get('source') == 'spotify':
             # Spotify's release date and artist credits do not identify recording
@@ -462,6 +502,7 @@ class Bridge:
             return {field: metadata[field], 'duration_seconds': timing.seconds(metadata.get('duration_seconds'))}
         track = metadata.get('object_id') or metadata.get('resource') or json.dumps(metadata, sort_keys=True)
         self.music_catalog.refresh(self.config, Path(__file__).parent)
+        cache_first = self.config.get('qobuz_cache_first', False)
         automatic = (not metadata.get('album_id') and
                      self.config.get('qobuz_metadata_enabled', True) and
                      self.config.get('auto_catalog', True) and
@@ -503,7 +544,7 @@ class Bridge:
         if metadata.get('album_id'):
             ordered = self.music_catalog.edition(metadata['album_id'])
             import catalog_pages
-            if self.config.get('qobuz_metadata_enabled', True) and (not ordered or catalog_pages.needs_refresh(ordered)):
+            if not cache_first and self.config.get('qobuz_metadata_enabled', True) and (not ordered or catalog_pages.needs_refresh(ordered)):
                 prior_ordered = ordered
                 try:
                     page = self.album_page(metadata['album_id'])
@@ -537,6 +578,14 @@ class Bridge:
             if row:
                 enriched.update(row)
                 work_timing = timing.composition(ordered, selected)
+            if cache_first and self.config.get('qobuz_metadata_enabled', True):
+                enriched = persistent_metadata.merge_missing(enriched, self.reviewed_edition_album(metadata))
+                enriched.update(self.music_catalog.encountered_album(enriched))
+                enriched = persistent_metadata.merge_missing(enriched, self.music_catalog.encountered_track(metadata))
+                try:
+                    enriched = self.fill_qobuz_gaps(metadata, enriched)
+                except (OSError, sqlite3.Error, ValueError):
+                    LOG.warning('Qobuz fallback unavailable')
         elif metadata.get('resource') and self.config.get('library_root'):
             saved_local = self.music_catalog.local(local_resource or metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
             if saved_local:
@@ -559,9 +608,12 @@ class Bridge:
                 except Exception as error:
                     LOG.warning('Local composition unavailable: %s', type(error).__name__)
         local_priority = local_status in ('local_matched', 'local_ambiguous', 'local_unavailable')
+        named_network = not cache_first or not (enriched.get('album') and
+                        (enriched.get('artist') or enriched.get('albumArtist')) and
+                        enriched.get('title') and timing.seconds(enriched.get('duration_seconds')))
         if work_timing is None and not metadata.get('album_id') and not local_priority:
             try:
-                match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page, self.music_catalog)
+                match = reviewed_catalog.lookup(metadata, self.config.get('reviewed_catalog_albums', []), self.album_page, self.music_catalog, allow_network=named_network)
                 if match:
                     row, work_timing = match
                     enriched.update(row)
@@ -571,7 +623,7 @@ class Bridge:
         if local_priority:
             catalog_status = local_status
         elif automatic and work_timing is None:
-            match, catalog_status = self.auto_catalog.lookup(metadata)
+            match, catalog_status = self.auto_catalog.lookup(metadata) if named_network else self.auto_catalog.lookup(metadata, allow_network=False)
             if match:
                 row, work_timing = match
                 enriched.update(row)
@@ -709,12 +761,20 @@ class Bridge:
         elif metadata.get('source') == 'sonos':
             content = self.sonos.cover(metadata)
         elif album_id:
+            if self.config.get('qobuz_cache_first'):
+                entry = next((e for e in self.state['history'] if e['key'] == self.album_key(metadata)
+                              and (self.root / e['cover']).is_file()), None)
+                if entry:
+                    output = self.root / 'current-cover.jpg'
+                    layouts.current(self.root / entry['cover'], entry['title'], entry.get('artist', ''), output)
+                    self.state['artist'] = entry.get('artist', '')
+                    return output, entry['title']
             reviewed = self.reviewed_edition_album(metadata)
             title = reviewed.get('album') or title
             artist = reviewed.get('albumArtist') or reviewed.get('artist') or artist
             url = reviewed.get('_album_art_url', '')
             # Verified saved editions must remain useful when the public page is blocked.
-            if not self.qobuz_cover_url(url):
+            if not self.qobuz_cover_url(url) and not self.config.get('qobuz_cache_first'):
                 parser = MetaParser()
                 try:
                     parser.feed(self.album_page(album_id))

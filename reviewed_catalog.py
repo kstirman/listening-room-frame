@@ -5,7 +5,7 @@ import timing
 import catalog_pages
 
 
-def lookup(metadata, mappings, fetch, catalog=None):
+def lookup(metadata, mappings, fetch, catalog=None, allow_network=True):
     if not isinstance(mappings, list):
         return None
     title = metadata.get('title')
@@ -20,7 +20,7 @@ def lookup(metadata, mappings, fetch, catalog=None):
     if not isinstance(album_id, str) or not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
         return None
     rows = catalog.edition(album_id) if catalog else None
-    if not rows or catalog_pages.needs_refresh(rows):
+    if allow_network and (not rows or catalog_pages.needs_refresh(rows)):
         if catalog:
             from auto_catalog import parsed_rows
             rows = parsed_rows(fetch(album_id), album_id)
@@ -29,7 +29,7 @@ def lookup(metadata, mappings, fetch, catalog=None):
             parser = classical.Tracks()
             parser.feed(fetch(album_id))
             rows = classical.catalog(parser.tracks)
-    match = select(metadata, rows)
+    match = select(metadata, rows or {})
     return match if match and match[1] else None
 
 

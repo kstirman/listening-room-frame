@@ -398,7 +398,28 @@ class Bridge:
                        if " ".join((row.get('title') or '').split()).casefold() == title]
         if len(matches) == 1:
             return matches[0]
-        return self.cached_ordinal_match(metadata, verified, duration)
+        cached = self.cached_ordinal_match(metadata, verified, duration)
+        if cached[0] is not None or matches:
+            return cached
+        # A reviewed playback duration is evidence, not a tolerance. Require
+        # the supplied title and track artist, and reject all ambiguous names.
+        def normalized(value):
+            return ' '.join(value.split()).casefold() if isinstance(value, str) else ''
+        artist = normalized(metadata.get('artist'))
+        if not title or not artist:
+            return None, {}
+        named = [(key, row) for key, row in verified.items()
+                 if normalized(row.get('title')) == title
+                 and normalized(row.get('artist')) == artist]
+        if len(named) != 1:
+            return None, {}
+        key, row = named[0]
+        if (str(row.get('_source_ordinal')) != key
+                or row.get('_catalog_track_id')
+                or timing.seconds(row.get('_observed_duration_seconds')) != duration
+                or (metadata.get('version') and normalized(metadata['version']) != normalized(row.get('version')))):
+            return None, {}
+        return key, row
 
     def cached_ordinal_match(self, metadata, rows, duration):
         """Corroborate an ordinal capture using saved exact JPLAY identity only."""

@@ -394,9 +394,66 @@ class Bridge:
         if title:
             matches = [(key, row) for key, row in matches
                        if " ".join((row.get('title') or '').split()).casefold() == title]
-        if len(matches) != 1:
+        if len(matches) == 1:
+            return matches[0]
+        return self.cached_ordinal_match(metadata, verified, duration)
+
+    def cached_ordinal_match(self, metadata, rows, duration):
+        """Corroborate an ordinal capture using saved exact JPLAY identity only."""
+        aid = metadata.get('album_id')
+        match = re.fullmatch(r'qobuz/track/(\d+)', metadata.get('object_id') or '')
+        # Mixed captures need a complete unique global source ordering. Only
+        # ordinal-keyed rows are fallback candidates; provider IDs keep priority.
+        ordinals = [str(row.get('_source_ordinal')) for row in rows.values()]
+        if (not match or len(set(ordinals)) != len(rows)
+                or set(ordinals) != {str(n) for n in range(1, len(rows) + 1)}):
             return None, {}
-        return matches[0]
+        resolver = getattr(self, 'independent_catalog', None)
+        cache = getattr(resolver, 'cache', None)
+        if cache is None:
+            return None, {}
+        try:
+            album = cache.get('jplay', aid)
+        except (OSError, ValueError, sqlite3.Error):
+            return None, {}
+        if (not isinstance(album, dict) or album.get('album_id') != aid
+                or str(album.get('expected_tracks')) != str(len(rows))
+                or not isinstance(album.get('provenance'), dict)
+                or album['provenance'].get('source') != 'JPLAY local music database'):
+            return None, {}
+        tracks = album.get('tracks')
+        track = tracks.get(match[1]) if isinstance(tracks, dict) else None
+        if not isinstance(track, dict) or timing.seconds(track.get('duration_seconds')) != duration:
+            return None, {}
+        def normalized(value):
+            return ' '.join(value.split()).casefold() if isinstance(value, str) else ''
+        title = normalized(track.get('title'))
+        version = normalized(track.get('version'))
+        full_title = normalized(str(track.get('title')) + ' (' + track['version'] + ')') if version else title
+        incoming = normalized(metadata.get('title'))
+        if metadata.get('version') and normalized(metadata['version']) != version:
+            return None, {}
+        if not title or (incoming and incoming not in {title, full_title}):
+            return None, {}
+        candidates = [(key, row) for key, row in rows.items()
+                      if timing.seconds(row.get('duration_seconds')) == duration
+                      and normalized(row.get('title')) == full_title]
+        # Track numbers reset on multi-disc releases. On a single disc the
+        # known source position must agree even when title/timing are unique.
+        if str(album.get('volumes')) == '1':
+            position = str(track.get('track_number'))
+            if position not in ordinals:
+                return None, {}
+            candidates = [(key, row) for key, row in candidates
+                          if str(row.get('_source_ordinal')) == position]
+        if len(candidates) != 1:
+            return None, {}
+        key, row = candidates[0]
+        if (str(row.get('_source_ordinal')) != key
+                or (row.get('_catalog_track_id') and str(row['_catalog_track_id']) != match[1])
+                or (row.get('version') and normalized(row['version']) != version)):
+            return None, {}
+        return key, row
 
     def reviewed_edition_row(self, metadata):
         return self.reviewed_edition_match(metadata)[1]

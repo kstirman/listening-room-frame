@@ -87,6 +87,25 @@ class PhotoTests(unittest.TestCase):
         self.b.restore(); self.assertEqual(self.current, 'MANUAL')
         self.assertNotIn('MANUAL', [c.args[0] for c in self.tv.delete.call_args_list])
 
+    def test_interrupted_upload_is_not_a_manual_override(self):
+        self.b.state.update(garbage=['INTERRUPTED'], pending='LATER')
+        self.current = 'INTERRUPTED'
+        self.step(120)
+        self.assertEqual(self.current, 'PHOTO1')
+        self.assertFalse(self.b.state.get('idle_photo_blocked'))
+
+    def test_persisted_false_hold_recovers_but_manual_choice_stays(self):
+        self.b.state.update(garbage=['INTERRUPTED'], pending='LATER',
+                            idle_photo_blocked=True)
+        self.current = 'MANUAL'
+        self.step(120)
+        self.tv.upload.assert_not_called()
+        self.assertTrue(self.b.state['idle_photo_blocked'])
+        self.current = 'INTERRUPTED'
+        self.step(151)
+        self.assertEqual(self.current, 'PHOTO1')
+        self.assertNotIn('idle_photo_blocked', self.b.state)
+
     def test_tv_not_in_art_mode(self):
         self.tv.get_artmode.return_value = 'off'
         self.step(120); self.tv.upload.assert_not_called(); self.tv.select_image.assert_not_called()

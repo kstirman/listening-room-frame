@@ -916,9 +916,11 @@ class Bridge:
 
     def show_idle_photo(self):
         """Rotate cached photos only while idle; preserve manual TV selections."""
-        if self.state.get('idle_photo_blocked'):
-            return
         now = time.monotonic()
+        # Recheck persisted manual holds: an interrupted upload can become
+        # current after a later attempt has replaced the pending selection.
+        if self.state.get('idle_photo_blocked') and now - self.last_tv_check < 30:
+            return
         if self.state.get('view') == 'photo' and now < self.next_photo and now - self.last_tv_check < 30:
             return
         themes = getattr(self.photo_stream, 'themes', None) if self.photo_stream and self.config.get('photo_themes_enabled') else None
@@ -948,11 +950,17 @@ class Bridge:
             current = tv.get_current()['content_id']
             self.last_tv_check = time.monotonic()
             owned = self.owned_ids() | {self.state.get('pending')}
+            # These IDs were saved immediately after our own uploads. A lost
+            # select response must not turn one into a permanent manual hold.
+            owned.update(self.state.get('garbage', []))
             if self.state.get('owned') and current not in owned:
                 # A manual art choice lasts until the next music session.
                 self.state['idle_photo_blocked'] = True
                 self.save()
                 return
+            if self.state.pop('idle_photo_blocked', None):
+                self.save()
+                LOG.info('Recovered idle rotation after interrupted artwork selection')
             if self.state.get('view') == 'photo' and now < self.next_photo:
                 return
             if not self.state.get('owned'):

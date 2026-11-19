@@ -25,6 +25,7 @@ import auto_catalog
 import cover_evidence
 import source_outcomes
 import music_catalog
+import track_research
 import persistent_metadata
 import music_context
 import programme_context
@@ -154,6 +155,7 @@ class Bridge:
         self.auto_catalog = auto_catalog.Resolver(cache_path=self.music_catalog.path)
         self.independent_catalog = persistent_metadata.Resolver(
             self.music_catalog.path, enabled=config.get("musicbrainz_enabled", False))
+        self.recording_research = track_research.Research(self.independent_catalog.cache, self.independent_catalog.provider)
         self.photo_stream = Stream(config) if config.get("photo_stream_enabled", False) else None
         self.local_index = {}
         self.index_at = 0
@@ -510,7 +512,7 @@ class Bridge:
         self.pages[album_id] = page
         return page
 
-    def fill_qobuz_gaps(self, metadata, fields):
+    def fill_qobuz_gaps(self, metadata, fields, research=False):
         """Reuse an exact release response across tracks and restarts."""
         album_id = metadata['album_id']
         if not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id):
@@ -521,7 +523,7 @@ class Bridge:
         source = 'qobuz-fallback'
         record = cache.get(source, album_id)
         if record is None:
-            if complete:
+            if complete and not research:
                 return fields
             try:
                 page = self.album_page(album_id)
@@ -571,6 +573,8 @@ class Bridge:
         if metadata.get('resource') and self.config.get('library_root') and not metadata.get('album_id'):
             cache_key += (int(time.monotonic() // 60),)
         cache_key += (self.music_catalog.cache_revision(),)
+        if self.config.get('recording_research_enabled'):
+            cache_key += (int(time.time() // 3600),)
         if metadata.get('album_id'):
             outcome = self.source_outcome(metadata['album_id']) or {}
             deadline = outcome.get('next_retry_at')
@@ -692,8 +696,17 @@ class Bridge:
         if self.config.get('liner_notes_enabled', True):
             notes = liner_notes.from_credits(enriched.get('credits', ''))
             notes.update(liner_notes.extract(enriched))
-            notes.update(liner_notes.lookup_data(metadata, self.music_catalog.document('liner', {}) or {}))
-            notes.update(liner_notes.lookup(metadata, self.config))
+            notes.update(liner_notes.lookup_data(enriched, self.music_catalog.document('liner', {}) or {}))
+            notes.update(liner_notes.lookup(enriched, self.config))
+        if self.config.get('recording_research_enabled') and local_status != 'local_ambiguous':
+            local_context = music_context.lookup(enriched, self.music_catalog.document('music_context', {}))
+            need_context = not (local_context or notes.get('note') or programme_context.extract(enriched))
+            need_credits = not all(notes.get(k) for k in ('personnel','songwriters','producer','engineer'))
+            facts = self.recording_research.lookup(metadata, enriched, need_credits, need_context,
+                self.fill_qobuz_gaps if self.config.get('qobuz_metadata_enabled', True) else None,
+                self.config.get('musicbrainz_enabled', False))
+            sourced = persistent_metadata.merge_missing(liner_notes.extract(facts), liner_notes.from_credits(facts.get('credits','')))
+            notes = persistent_metadata.merge_missing(notes, sourced)
         details = classical.normalize(enriched)
         programme = programme_context.extract(enriched)
         if programme:

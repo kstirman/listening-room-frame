@@ -74,3 +74,10 @@ exact-edition Qobuz request. The returned album and tracks are retained in the
 permanent catalog. Existing values take priority. Optional credits and dates
 from that response can fill empty fields. Missing optional credits alone do
 not start a network request. Previously denied requests stay deferred.
+
+Enable `recording_research_enabled` to research missing track credits and
+musical context in the background, including tracks with complete captions.
+An exact Qobuz track can provide credits. A unique MusicBrainz recording must
+match title, credited artist, release title and duration before its documented
+relationships can appear. The app retains recording facts and sources in the
+permanent catalog. Previously stored credits survive a later source outage.

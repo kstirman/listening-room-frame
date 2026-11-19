@@ -80,6 +80,15 @@ class Cache:
                                   (provider,identity)).fetchone() is not None
         except sqlite3.Error:return False
 
+    def cooling_down(self, provider, identity, seconds):
+        if not self.path.exists():return False
+        try:
+            with closing(sqlite3.connect(self.path.as_uri()+'?mode=ro',uri=True)) as db:
+                row = db.execute('SELECT saved_at FROM metadata_attempts WHERE provider=? AND identity=?',
+                                 (provider,identity)).fetchone()
+            return bool(row and time.time()-row[0] < seconds)
+        except sqlite3.Error:return False
+
     def write(self, records, attempt=None, verify_existing=False):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.touch(mode=0o600, exist_ok=True)
@@ -155,9 +164,14 @@ def jplay_records(document):
 class MusicBrainz:
     def __init__(self, cache, get=requests.get):
         self.cache, self.get = cache, get
+        self.request_lock = threading.Lock()
         self.last_request = 0
 
     def request(self, entity, params):
+        with self.request_lock:
+            return self._request(entity, params)
+
+    def _request(self, entity, params):
         params = dict(params, fmt='json')
         identity = entity+'?'+json.dumps(params, sort_keys=True)
         saved = self.cache.get('musicbrainz-response', identity)

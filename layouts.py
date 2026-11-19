@@ -260,8 +260,10 @@ def liner(cover_path, title, artist, output, details):
                 column.block(person['name']+' · '+person['role'], 56, lines=1, gap=18)
         if notes.get('note'):
             column.block(notes['note'], 52, lines=4)
-        elif notes.get('songwriters'):
-            column.block('Written by '+notes['songwriters'], 52, muted, 2)
+        for field, lead in [('songwriters','Written by '),('producer','Produced by '),('engineer','Engineering · ')]:
+            if notes.get(field):
+                column.block(lead+notes[field], 46, muted, 2, 12)
+                break
     column.y, column.bottom = 1740, 2120
     if details.get('composition_year') and not context: column.block('Composed · '+details['composition_year'], 52, muted, 1, 12)
     footer = []

@@ -11,7 +11,7 @@ def years(value):
     if re.fullmatch(period + r'(?:\s*[–—-]\s*' + period + r')?\s+century(?:\s+or earlier)?', value.strip(), re.I):
         return re.sub(r'\s*[–—-]\s*', '–', re.sub(r'\s+', ' ', value.strip().lower()))
     # Keep historical uncertainty visible instead of turning an estimate into a fact.
-    qualifier=re.match(r'^\s*(c\.|ca\.|circa|approximately|probably|before|after|by)\s+',value,re.I)
+    qualifier=re.match(r'^\s*(c\.|ca\.|circa|approximately|probably|before|after|by)(?:\s+|(?<=\.)(?=\d))',value,re.I)
     if qualifier:
         tail=years(value[qualifier.end():])
         prefix=qualifier.group(1).lower()

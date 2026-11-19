@@ -33,6 +33,19 @@ class DateTests(unittest.TestCase):
   self.assertEqual(extract({'compositionDate':'by 1735'},{'composer':'Bach'})['composition_year'],'by 1735')
   self.assertEqual(years('by unknown'),'')
   self.assertEqual(years('circa unknown'),'')
+ def test_compact_dotted_estimates_keep_uncertainty(self):
+  from dates import catalog_fields, composition_years, recording_years
+  for value in ['c.1850', 'ca.1850', 'C.1850', 'CA.1850', 'c. 1850']:
+   with self.subTest(value=value):
+    self.assertEqual(years(value),'c. 1850')
+    self.assertEqual(catalog_fields({'compositionDate':value,'composition_year':'1850'},[])['composition_year'],'c. 1850')
+  self.assertEqual(years('ca.1850–52'),'c. 1850–1852')
+  self.assertEqual(years('c.1950-04-12'),'c. 1950')
+  self.assertEqual(recording_years('c.1950–1952; ca.1957-04-12'),'c. 1950–1952; c. 1957')
+  self.assertEqual(composition_years('Original: c.1850; Arranged: ca.1900'),'Original: c. 1850; Arranged: c. 1900')
+  self.assertEqual(composition_years('Version: ca.2001'),'Version: c. 2001')
+  self.assertEqual(years('c.unknown'),'')
+  self.assertEqual(years('ca.'),'')
  def test_century_periods_survive_composition_display(self):
   for period in ['13th century or earlier','late 13th–early 14th century','12th century']:
    self.assertEqual(extract({'compositionDate':period},{'composer':'Anonymous'})['composition_year'],period)

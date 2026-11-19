@@ -31,6 +31,20 @@ class Tests(unittest.TestCase):
   self.assertEqual(result['conductor'],'Arturo Toscanini')
   self.assertEqual(result['recording_year'],'1952')
   self.assertEqual(result['composition_year'],'1808')
+ def test_estimated_dates_replace_stale_saved_derived_years(self):
+  import dates
+  row={'title':'Song','album':'Album','artist':'Artist','duration_seconds':200,
+   '_catalog_album_id':'abc','_edition_verified':'abc','_catalog_track_id':'999',
+   '_catalog_complete':True,'_catalog_expected_tracks':1,
+   'compositionDate':'ca.1850','composition_year':'1850',
+   'recordingDate':'c.1950','recording_year':'1950'}
+  self.b.music_catalog.edition=Mock(return_value={'999':row})
+  self.b.album_page=Mock(side_effect=AssertionError('saved edition needs no fetch'))
+  result=Bridge.details(self.b,{'album_id':'abc','object_id':'qobuz/track/999','duration_seconds':200})
+  self.assertEqual(result['composition_year'],'c. 1850')
+  self.assertEqual(result['recording_year'],'c. 1950')
+  self.assertEqual(dates.display_line(result),'Composed · c. 1850  |  Recorded · c. 1950')
+  self.b.album_page.assert_not_called()
  def test_qobuz_release_date_reaches_display(self):
   self.b.album_page=Mock(return_value='<script type="application/ld+json">{"@type":"MusicAlbum","datePublished":"2004-04-02"}</script>')
   result=Bridge.details(self.b,{'object_id':'qobuz/track/999','album_id':'abc'})

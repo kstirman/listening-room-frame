@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from local_composition import build, Catalog, target_file
+from local_composition import build, Catalog, probe, target_file
 import timing
 
 
@@ -12,6 +12,14 @@ def item(disc, track, movement='', album='Example Opera', artist='Example Cast')
             'duration_seconds':100+track,'movementName':movement,'work':'Example Work','composer':'Composer'}
 
 class LocalCompositionTests(unittest.TestCase):
+    def test_probe_uses_shared_bounded_metadata_reader(self):
+        path=Path('/library/track.flac')
+        data={'duration':'61.4','tags':{'album':'Example','track':'2'}}
+        with patch('local_composition.ffprobe_metadata.read',return_value=data) as read:
+            self.assertEqual(probe(path),{'album':'Example','track':'2','duration_seconds':61})
+        read.assert_called_once_with(path,timeout=2,
+            probe_args=('-analyzeduration','0','-probesize','32768'))
+
     def test_no_space_and_prefixed_movement_numbers(self):
         self.assertEqual(timing.number({'movementName':'I.Elegy'}),1)
         self.assertEqual(timing.number({'work':'Quartet','movementName':'Quartet: II.Adagio'}),2)

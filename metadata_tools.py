@@ -2,11 +2,13 @@
 import argparse
 import datetime
 import json
-import shutil
 from pathlib import Path
 
 import classical
 from library_enrich import first
+from metadata_fs import (copy_file_exclusive_at, open_private_directory, open_root,
+                         read_json_at, regular_file_exists_at,
+                         require_regular_beneath, write_json_atomic_at)
 
 FIELDS = ('composer', 'work', 'movementName', 'conductor', 'orchestra', 'soloist', 'compositionDate', 'recordingDate')
 ALIASES = {'composer': ('composer', 'tcom'), 'work': ('work', 'composition'),
@@ -21,62 +23,67 @@ def read(path, default):
 
 def audit(root):
     root = root.resolve()
-    store = root / '.listening-room-metadata'
-    inventory = read(store / 'inventory.json', None)
-    if inventory is None:
-        raise ValueError('Run library_enrich.py --library-root first')
-    tracks = read(store / 'enriched.json', {'tracks': {}})['tracks']
-    overrides = read(store / 'track-overrides.json', {})
-    results = []
-    for album in inventory['albums']:
-        for track in album['tracks']:
-            path = track['path']
-            fields = {key: first(track['tags'], *aliases) for key, aliases in ALIASES.items()}
-            fields['title'] = track['title']
-            fields.update(tracks.get(path, {}).get('fields', {}))
-            fields.update(overrides.get(path, {}).get('fields', {}))
-            is_classical = classical.normalize(fields) is not None
-            checked = FIELDS if is_classical else ('recordingDate',)
-            results.append({'path': path, 'classical': is_classical,
-                            'missing_candidates': [key for key in checked if not fields.get(key)],
-                            'has_album_art': bool(album.get('cover'))})
-    return {'note': 'Missing candidates require review: conductor, movement and ensemble may not apply. Presence is not verification.',
-            'tracks': results, 'scan_errors': inventory.get('errors', [])}
+    with open_root(root) as root_fd:
+        with open_private_directory(
+                root_fd, '.listening-room-metadata',
+                missing_message='Run library_enrich.py --library-root first') as store_fd:
+            inventory = read_json_at(store_fd, 'inventory.json', None)
+            if inventory is None:
+                raise ValueError('Run library_enrich.py --library-root first')
+            tracks = read_json_at(store_fd, 'enriched.json', {'tracks': {}})['tracks']
+            overrides = read_json_at(store_fd, 'track-overrides.json', {})
+            results = []
+            for album in inventory['albums']:
+                for track in album['tracks']:
+                    path = track['path']
+                    fields = {key: first(track['tags'], *aliases) for key, aliases in ALIASES.items()}
+                    fields['title'] = track['title']
+                    fields.update(tracks.get(path, {}).get('fields', {}))
+                    fields.update(overrides.get(path, {}).get('fields', {}))
+                    is_classical = classical.normalize(fields) is not None
+                    checked = FIELDS if is_classical else ('recordingDate',)
+                    results.append({'path': path, 'classical': is_classical,
+                                    'missing_candidates': [key for key in checked if not fields.get(key)],
+                                    'has_album_art': bool(album.get('cover'))})
+            return {'note': 'Missing candidates require review: conductor, movement and ensemble may not apply. Presence is not verification.',
+                    'tracks': results, 'scan_errors': inventory.get('errors', [])}
 
 def apply(root, proposal):
     """Fill blanks only. Never replace existing values or protected overrides."""
     root = root.resolve()
-    store = root / '.listening-room-metadata'
-    if not store.is_dir():
-        raise ValueError('Scan the library first')
-    db = store / 'enriched.json'
-    data = read(db, {'albums': [], 'tracks': {}})
-    overrides = read(store / 'track-overrides.json', {})
-    changes = 0
-    for relative, entry in proposal['tracks'].items():
-        target = (root / relative).resolve()
-        if Path(relative).is_absolute() or not target.is_relative_to(root) or not target.is_file():
-            raise ValueError('Proposal must reference existing files beneath the library root')
-        fields = entry['fields']
-        provenance = entry.get('provenance', {})
-        if any(not provenance.get(key) for key in fields):
-            raise ValueError('Each proposed field needs provenance')
-        saved = data['tracks'].setdefault(relative, {'fields': {}, 'provenance': {}})
-        for key, value in fields.items():
-            if saved['fields'].get(key) or overrides.get(relative, {}).get('fields', {}).get(key):
-                continue
-            if value:
-                saved['fields'][key] = value
-                saved.setdefault('provenance', {})[key] = provenance[key]
-                changes += 1
-    if changes:
-        if db.exists():
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-            shutil.copy2(db, store / ('enriched.before-' + stamp + '.json'))
-        temp = db.with_suffix('.tmp')
-        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-        temp.replace(db)
-    return changes
+    with open_root(root) as root_fd:
+        with open_private_directory(
+                root_fd, '.listening-room-metadata',
+                missing_message='Scan the library first') as store_fd:
+            db_exists = regular_file_exists_at(store_fd, 'enriched.json')
+            data = read_json_at(store_fd, 'enriched.json', {'albums': [], 'tracks': {}})
+            overrides = read_json_at(store_fd, 'track-overrides.json', {})
+            changes = 0
+            for relative, entry in proposal['tracks'].items():
+                try:
+                    require_regular_beneath(root_fd, relative)
+                except (FileNotFoundError, ValueError) as error:
+                    raise ValueError(
+                        'Proposal must reference existing non-symlink files beneath the library root') from error
+                fields = entry['fields']
+                provenance = entry.get('provenance', {})
+                if any(not provenance.get(key) for key in fields):
+                    raise ValueError('Each proposed field needs provenance')
+                saved = data['tracks'].setdefault(relative, {'fields': {}, 'provenance': {}})
+                for key, value in fields.items():
+                    if saved['fields'].get(key) or overrides.get(relative, {}).get('fields', {}).get(key):
+                        continue
+                    if value:
+                        saved['fields'][key] = value
+                        saved.setdefault('provenance', {})[key] = provenance[key]
+                        changes += 1
+            if changes:
+                if db_exists:
+                    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+                    copy_file_exclusive_at(
+                        store_fd, 'enriched.json', 'enriched.before-' + stamp + '.json')
+                write_json_atomic_at(store_fd, 'enriched.json', data)
+            return changes
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

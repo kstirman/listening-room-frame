@@ -4,6 +4,10 @@ import timing
 import re
 import time
 from pathlib import Path
+from playback_text import limit_texts
+
+
+MAX_SNAPSHOT_BYTES = 1_000_000
 
 
 class RoonSource:
@@ -12,7 +16,10 @@ class RoonSource:
 
     def playback(self):
         try:
-            data = json.loads((self.root / 'now-playing.json').read_text())
+            snapshot = self.root / 'now-playing.json'
+            if snapshot.stat().st_size > MAX_SNAPSHOT_BYTES:
+                return 'STOPPED', {}
+            data = json.loads(snapshot.read_text())
             if not isinstance(data, dict):
                 return 'STOPPED', {}
             age = time.time() - float(data['updated_at'])
@@ -24,6 +31,7 @@ class RoonSource:
             lines = data['lines']
             if not isinstance(lines, list) or len(lines) != 3 or not all(isinstance(x, str) for x in lines):
                 return 'STOPPED', {}
+            lines = limit_texts(lines)
             cover = data.get('cover', '')
             if not re.fullmatch(r'[a-f0-9]{64}\.jpg', cover):
                 return 'PLAYING', {}  # No supported art: bridge restores original.

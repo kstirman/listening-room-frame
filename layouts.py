@@ -3,6 +3,7 @@ import math
 import timing
 import dates
 import programme_context
+from playback_text import limit_text
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
@@ -17,13 +18,22 @@ def font(size):
 
 
 def fit_text(draw, text, maximum, size):
-    text = ' '.join(text.split())
+    text = ' '.join(limit_text(text).split())
     f = font(size)
     while draw.textlength(text, font=f) > maximum and size > 34:
         size -= 2
         f = font(size)
-    while draw.textlength(text, font=f) > maximum and len(text) > 1:
-        text = text[:-2].rstrip() + '…'
+    if draw.textlength(text, font=f) <= maximum or len(text) <= 1:
+        return text, f
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = text[:middle].rstrip() + '…'
+        if draw.textlength(candidate, font=f) <= maximum:
+            low = middle
+        else:
+            high = middle - 1
+    text = text[:low].rstrip() + '…'
     return text, f
 
 
@@ -51,9 +61,10 @@ class Column:
     def block(self, value, size=48, color=(242,235,219), lines=2, gap=28):
         if not value:
             return
+        value = limit_text(str(value))
         face = font(size)
         rows, line = [], ''
-        for word in str(value).split():
+        for word in value.split():
             candidate = (line+' '+word).strip()
             if line and self.draw.textlength(candidate, font=face) > self.width:
                 rows.append(line); line = word
@@ -87,7 +98,8 @@ def connection(column, details):
 
 def music_identity(column, album, artist, track=''):
     """Keep the sleeve's album and artist prominent as individual tracks change."""
-    album, artist, track = (' '.join(str(value or '').split()) for value in (album, artist, track))
+    album, artist, track = (' '.join(limit_text(str(value or '')).split())
+                            for value in (album, artist, track))
     column.block(album or track, 96, lines=3, gap=36)
     column.block(artist, 64, (210,206,194), 2, 48)
     if album and track and album.casefold() != track.casefold():

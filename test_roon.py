@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 from PIL import Image
 from bridge import Bridge
+from playback_text import MAX_TEXT_CODEPOINTS, MAX_TEXT_UTF8_BYTES
 from roon_source import RoonSource
 
 
@@ -70,6 +71,14 @@ class RoonTests(unittest.TestCase):
         _, second=self.b.playback()
         self.assertEqual(self.b.album_key(m), self.b.album_key(second))
         self.assertNotEqual(first,self.b.details(second))
+
+    def test_snapshot_display_fields_are_bounded(self):
+        self.data['lines'] = ['🎵' * 1000, 'Artist ' * 1000, 'Album ' * 1000]
+        self.write()
+        lines = self.b.playback()[1]['roon_lines']
+        self.assertTrue(all(value.endswith('…') for value in lines))
+        self.assertTrue(all(len(value) <= MAX_TEXT_CODEPOINTS for value in lines))
+        self.assertTrue(all(len(value.encode('utf-8')) <= MAX_TEXT_UTF8_BYTES for value in lines))
 
     def test_tv_updates_on_track_change_and_restores_on_stale_source(self):
         tv = Mock()

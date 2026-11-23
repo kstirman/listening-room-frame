@@ -16,6 +16,7 @@ from PIL import Image
 import requests
 
 from bridge import Bridge
+from playback_text import MAX_TEXT_CODEPOINTS, MAX_TEXT_UTF8_BYTES
 from setup_devices import validate_config
 from setup_preview import PreviewBridge
 from spotify_auth import authorization, Callback, CallbackServer
@@ -81,6 +82,17 @@ class SourceTests(unittest.TestCase):
         self.session.post.assert_not_called()
         self.assertEqual(self.source.playback(), (status, m))
         self.assertEqual(self.session.get.call_count, 1)
+
+    def test_display_fields_are_bounded(self):
+        data = playing()
+        data['item']['name'] = '🎵' * 1000
+        data['item']['album']['name'] = 'Album ' * 1000
+        data['item']['artists'] = [{'name': 'Artist ' * 1000}]
+        metadata = track_metadata(data)[1]
+        for field in ('title', 'album', 'artist'):
+            self.assertTrue(metadata[field].endswith('…'))
+            self.assertLessEqual(len(metadata[field]), MAX_TEXT_CODEPOINTS)
+            self.assertLessEqual(len(metadata[field].encode('utf-8')), MAX_TEXT_UTF8_BYTES)
 
     def test_expired_access_refreshes_and_preserves_unrotated_refresh_token(self):
         self.tokens['expires_at'] = 0;save_tokens(self.path, self.tokens)

@@ -1,5 +1,6 @@
 import unittest
 from bridge import Bridge, metadata_values
+from playback_text import MAX_TEXT_CODEPOINTS, MAX_TEXT_UTF8_BYTES
 
 
 class BubbleMetadataTests(unittest.TestCase):
@@ -41,6 +42,14 @@ class BubbleMetadataTests(unittest.TestCase):
                            'qobuz/albums/abc/1/extra'):
             with self.subTest(identifier=identifier):
                 self.assertNotIn('album_id', metadata_values(f'<item id="{identifier}"/>'))
+
+    def test_display_fields_are_bounded_before_bridge_use(self):
+        metadata = metadata_values('<item><title>' + '🎵' * 1000 +
+                                   '</title><album>' + 'Album ' * 1000 + '</album></item>')
+        self.assertTrue(metadata['title'].endswith('…'))
+        self.assertTrue(metadata['album'].endswith('…'))
+        self.assertLessEqual(len(metadata['title']), MAX_TEXT_CODEPOINTS)
+        self.assertLessEqual(len(metadata['title'].encode('utf-8')), MAX_TEXT_UTF8_BYTES)
 
 
 if __name__ == '__main__':

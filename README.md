@@ -167,7 +167,8 @@ This writes `inventory.json` and extracted cover copies beneath `/path/to/music/
 2. Report missing fields, including classical tracks identified through overrides:
 
 ```sh
-.venv/bin/python metadata_tools.py --library-root /path/to/music audit > metadata-audit.json
+install -d -m 700 "$HOME/private-metadata-review"
+(umask 077 && .venv/bin/python metadata_tools.py --library-root /path/to/music audit > "$HOME/private-metadata-review/metadata-audit.json")
 ```
 
 Missing conductor, ensemble or movement fields may be inapplicable; review the candidates. Composition dates describe the work/version, not the recording session. Identify recording editions before borrowing metadata from another catalogue.
@@ -205,6 +206,8 @@ Making art available to JPLAY is a separate step: install a reviewed cover sidec
 TV state, authorization token (if issued), current images and recent covers live in the selected state directory. Recent cover history is capped and superseded application-owned TV images are cleaned up. Inventory/extracted covers and metadata backups are separate and are not size-capped.
 
 Keep `config.json`, state, tokens, library inventories, enrichment databases, downloaded artwork/booklets and private research out of Git. The repository contains no music files. README screenshots include album artwork to illustrate the display; operational artwork caches are excluded. Album/track IDs are used for public Qobuz lookups; signed playback URLs are not submitted to Qobuz by this application. The app reads local audio tags, not audio playback data.
+
+The metadata commands restrict `.listening-room-metadata` directories to mode `0700` and files to `0600`, and reject existing artifacts owned by another user. Shell redirection happens before Python can set its private umask, so create audit and proposal files only in an owner-only directory and use `umask 077` in the shell that writes them.
 
 ## Tests
 

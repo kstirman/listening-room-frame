@@ -6,26 +6,35 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
-import requests
+import safe_requests
 
 
-def local_host(value):
+def _local_addresses(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', value):
         raise ValueError('Enter a local hostname or IPv4 address, without a URL or port.')
     addresses = socket.getaddrinfo(value, None, family=socket.AF_INET)
-    if not addresses or not all(ipaddress.ip_address(a[4][0]).is_private and
-                                not ipaddress.ip_address(a[4][0]).is_loopback for a in addresses):
+    values = list(dict.fromkeys(address[4][0] for address in addresses))
+    if not values or not all(ipaddress.ip_address(address).is_private and
+                             safe_requests.address_allowed(address, allow_private=True)
+                             for address in values):
         raise ValueError('The device must have a private local-network address.')
+    return values
+
+
+def local_host(value):
+    _local_addresses(value)
     return value
 
 
 def probe_tv(host):
-    host = local_host(host)
-    with requests.get(f'http://{host}:8001/api/v2/', timeout=4, allow_redirects=False) as r:
-        r.raise_for_status()
-        if len(r.content) > 100_000:
-            raise ValueError('Unexpected TV response')
-        device = r.json()['device']
+    addresses = _local_addresses(host)
+    url = f'http://{host}:8001/api/v2/'
+    with safe_requests.Session(trusted_origins=(url,)) as session:
+        session.pin(url, addresses[0])
+        with session.get(url, timeout=4, allow_redirects=False,
+                         max_bytes=100_000) as r:
+            r.raise_for_status()
+            device = r.json()['device']
     model = device.get('modelName', '')
     if not model or not isinstance(model, str):
         raise ValueError('TV did not provide a model identifier')

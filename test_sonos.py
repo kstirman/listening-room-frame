@@ -75,30 +75,22 @@ class SonosTests(unittest.TestCase):
         for url in ('file:///secret', 'http://user:pass@example.com/art', 'ftp://example.com/art'):
             with self.assertRaises(ValueError):
                 self.source.cover({'sonos_cover':url})
-        response = Mock(is_redirect=False)
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        response.iter_content.return_value = [b'x'*20_000_001]
-        with patch('sonos_source.requests.get', return_value=response):
+        response = Mock(content=b'x'*20_000_001)
+        with patch.object(self.source.session, 'get', return_value=response):
             with self.assertRaises(ValueError):
                 self.source.cover({'sonos_cover':'https://example.com/art'})
-        response.iter_content.return_value = [b'image']
-        with patch('sonos_source.requests.get', return_value=response):
+        response.content = b'image'
+        with patch.object(self.source.session, 'get', return_value=response):
             self.assertEqual(self.source.cover({'sonos_cover':'https://example.com/art'}), b'image')
 
-    def test_redirect_revalidates_target_and_bounds_loops(self):
-        response = Mock(is_redirect=True, headers={'Location':'file:///secret'})
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        with patch('sonos_source.requests.get', return_value=response) as get:
-            with self.assertRaises(ValueError):
-                self.source.cover({'sonos_cover':'https://example.com/art'})
-            self.assertEqual(get.call_count, 1)
-        response.headers['Location'] = '/loop'
-        with patch('sonos_source.requests.get', return_value=response) as get:
-            with self.assertRaises(ValueError):
-                self.source.cover({'sonos_cover':'https://example.com/art'})
-            self.assertEqual(get.call_count, 5)
+    def test_cover_uses_selected_origin_and_bounded_policy(self):
+        metadata = self.source.playback()[1]
+        response = Mock(content=b'image')
+        with patch.object(self.source.session, 'get', return_value=response) as get:
+            self.assertEqual(self.source.cover(metadata), b'image')
+        get.assert_called_once_with(
+            metadata['sonos_cover'], timeout=10, max_redirects=5,
+            max_bytes=20_000_000, trusted_origins=('http://192.0.2.1:1400',))
 
     def test_tv_track_refresh_and_restore_without_other_sources(self):
         with tempfile.TemporaryDirectory() as directory, patch('bridge.SonosSource', return_value=self.source):

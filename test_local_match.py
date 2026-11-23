@@ -107,7 +107,9 @@ class LocalMatchTests(unittest.TestCase):
             b.session=Mock();b.session.get.return_value.content=data.getvalue()
             with patch('local_match.local_composition.probe',return_value=TAGS):
                 b.card(meta,None)
-                b.session.get.assert_called_once_with('http://example.test/reviewed.jpg',timeout=15)
+                b.session.get.assert_called_once_with(
+                    'http://example.test/reviewed.jpg', timeout=15,
+                    trusted_hosts=['example.test'])
                 b.card(meta,None)
                 self.assertEqual(b.session.get.call_count,1)
                 b.config['local_art_overrides']['local:/minimserver/*/AudirvanaLibrary:Original album']='http://unapproved.test/art.jpg'

@@ -32,6 +32,7 @@ import programme_context
 import reviewed_catalog
 import classical
 import dates
+import safe_requests
 from roon_source import RoonSource
 from sonos_source import SonosSource
 from spotify_source import SpotifySource
@@ -134,7 +135,7 @@ class Bridge:
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_file = self.root / 'state.json'
         self.state = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}
-        self.session = requests.Session()
+        self.session = safe_requests.Session()
         self.session.headers['User-Agent'] = 'ListeningRoomArtwork/1.0'
         self.stopped_at = (time.monotonic() - config.get("idle_seconds", 120)
                            if self.state.get("view") == "photo" else None)
@@ -235,8 +236,10 @@ class Bridge:
 
     def soap(self, action):
         body = f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:{action} xmlns:u="{SERVICE}"><InstanceID>0</InstanceID></u:{action}></s:Body></s:Envelope>'
-        response = self.session.post(self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control', data=body,
-                                     headers={'SOAPAction': f'"{SERVICE}#{action}"', 'Content-Type': 'text/xml'}, timeout=8)
+        url = self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control'
+        response = self.session.post(url, data=body,
+                                     headers={'SOAPAction': f'"{SERVICE}#{action}"', 'Content-Type': 'text/xml'},
+                                     timeout=8, allow_redirects=False, trusted_origins=(url,))
         response.raise_for_status()
         return {el.tag.split('}')[-1]: el.text for el in ET.fromstring(response.content).iter()}
 
@@ -272,7 +275,9 @@ class Bridge:
             while True:
                 body = f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="{service}"><ObjectID>0$items</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>{start}</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>'
                 r = self.session.post(self.config['minim_control'], data=body,
-                                      headers={'SOAPAction': f'"{service}#Browse"', 'Content-Type': 'text/xml'}, timeout=15)
+                                      headers={'SOAPAction': f'"{service}#Browse"', 'Content-Type': 'text/xml'},
+                                      timeout=15, allow_redirects=False,
+                                      trusted_origins=(self.config['minim_control'],))
                 r.raise_for_status()
                 response = {el.tag.split('}')[-1]: el.text for el in ET.fromstring(r.content).iter()}
                 for item in ET.fromstring(response['Result']):
@@ -340,7 +345,9 @@ class Bridge:
 
     def television(self):
         # Do not send wake/power/input/audio commands. Verify TV identity first.
-        r = self.session.get(f"http://{self.config['tv']}:8001/api/v2/", timeout=4)
+        url = f"http://{self.config['tv']}:8001/api/v2/"
+        r = self.session.get(url, timeout=4, allow_redirects=False,
+                             trusted_origins=(url,))
         r.raise_for_status()
         device = r.json()['device']
         if device.get('modelName') != self.config['tv_model']:
@@ -855,6 +862,7 @@ class Bridge:
     def cover(self, metadata):
         album_id = metadata.get('album_id')
         inferred_cover = False
+        trusted_art_hosts = ()
         title = metadata.get('album', '')
         artist = metadata.get('albumArtist') or metadata.get('artist', '')
         if metadata.get('source') == 'roon':
@@ -922,9 +930,17 @@ class Bridge:
                            and parsed.hostname in self.config['local_art_hosts'])
             if not (qobuz_cover or local_cover):
                 raise ValueError('No supported cover URL')
+            if local_cover:
+                trusted_art_hosts = self.config['local_art_hosts']
         if metadata.get('source') not in ('roon', 'sonos'):
             try:
-                r = self.session.get(url, timeout=15, allow_redirects=False) if inferred_cover else self.session.get(url, timeout=15)
+                if inferred_cover:
+                    r = self.session.get(url, timeout=15, allow_redirects=False)
+                elif trusted_art_hosts:
+                    r = self.session.get(url, timeout=15,
+                                         trusted_hosts=trusted_art_hosts)
+                else:
+                    r = self.session.get(url, timeout=15)
                 r.raise_for_status()
                 if inferred_cover and (r.status_code != 200 or
                         r.headers.get('Content-Type', '').split(';')[0].strip().lower() not in ('image/jpeg', 'image/png', 'image/webp')):

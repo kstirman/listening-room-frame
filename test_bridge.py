@@ -12,6 +12,15 @@ class Tests(unittest.TestCase):
   self.b.details=Mock(return_value=None)
   self.b.cover=Mock(return_value=(Path('cover.jpg'),'Album'))
  def tearDown(self):self.temp.cleanup()
+ def test_renderer_soap_disables_redirects_and_trusts_only_its_origin(self):
+  url='http://192.0.2.20:4005/AVTransport/control'
+  self.b.config['renderer_control_url']=url
+  self.b.session=Mock();self.b.session.post.return_value.content=b'<Envelope><State>PLAYING</State></Envelope>'
+  self.assertEqual(self.b.soap('GetTransportInfo')['State'],'PLAYING')
+  call=self.b.session.post.call_args
+  self.assertEqual(call.args[0],url)
+  self.assertFalse(call.kwargs['allow_redirects'])
+  self.assertEqual(call.kwargs['trusted_origins'],(url,))
  def test_local_art_override_replaces_embedded_cover_url(self):
   import io
   from PIL import Image
@@ -21,7 +30,8 @@ class Tests(unittest.TestCase):
   data=io.BytesIO();Image.new('RGB',(32,32),'red').save(data,format='JPEG')
   self.b.session=Mock();self.b.session.get.return_value.content=data.getvalue()
   Bridge.cover(self.b,metadata)
-  self.b.session.get.assert_called_once_with(chosen,timeout=15)
+  self.b.session.get.assert_called_once_with(
+   chosen,timeout=15,trusted_hosts=['192.0.2.10'])
  def test_saved_metadata_survives_unreadable_audio_tags(self):
   self.b.config['library_root']='/unused'
   saved={'classical':True,'composer':'Ludwig van Beethoven','work':'Symphony No. 6','conductor':'Arturo Toscanini','recordingDate':'1952','compositionDate':'1808'}

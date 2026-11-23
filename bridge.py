@@ -32,12 +32,12 @@ import programme_context
 import reviewed_catalog
 import classical
 import dates
+from cover_images import normalized_cover
 from roon_source import RoonSource
 from sonos_source import SonosSource
 from spotify_source import SpotifySource
 
 import requests
-from PIL import Image, ImageOps
 from samsungtvws.art.art import SamsungTVArt
 
 LOG = logging.getLogger('frame-art')
@@ -791,8 +791,8 @@ class Bridge:
             identity = (metadata['source_album_key'], metadata['spotify_cover'])
             if getattr(self, '_spotify_cover_identity', None) != identity or not cover.exists():
                 content = self.spotify.cover(metadata)
-                with Image.open(io.BytesIO(content)) as source:
-                    ImageOps.exif_transpose(source).convert('RGB').save(cover, quality=95)
+                with normalized_cover(io.BytesIO(content)) as source:
+                    source.save(cover, quality=95)
                 self._spotify_cover_identity = identity
             output = self.root / 'current-cover.jpg'
             layouts.spotify(cover, metadata, output)
@@ -939,8 +939,8 @@ class Bridge:
                 raise ArtworkUnavailable('Current album artwork unavailable')
             raise ValueError('Cover exceeds size limit')
         try:
-            cover = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert('RGB')
-        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            cover = normalized_cover(io.BytesIO(content))
+        except ValueError as error:
             if inferred_cover:
                 raise ArtworkUnavailable('Current album artwork unavailable') from error
             raise

@@ -2,11 +2,11 @@
 import argparse
 import datetime
 import json
-import shutil
+import os
 from pathlib import Path
 
 import classical
-from library_enrich import first
+from library_enrich import first, private_copy, private_write_text, secure_storage
 
 FIELDS = ('composer', 'work', 'movementName', 'conductor', 'orchestra', 'soloist', 'compositionDate', 'recordingDate')
 ALIASES = {'composer': ('composer', 'tcom'), 'work': ('work', 'composition'),
@@ -22,9 +22,10 @@ def read(path, default):
 def audit(root):
     root = root.resolve()
     store = root / '.listening-room-metadata'
-    inventory = read(store / 'inventory.json', None)
-    if inventory is None:
+    if not (store / 'inventory.json').exists():
         raise ValueError('Run library_enrich.py --library-root first')
+    secure_storage(store)
+    inventory = read(store / 'inventory.json', None)
     tracks = read(store / 'enriched.json', {'tracks': {}})['tracks']
     overrides = read(store / 'track-overrides.json', {})
     results = []
@@ -49,6 +50,7 @@ def apply(root, proposal):
     store = root / '.listening-room-metadata'
     if not store.is_dir():
         raise ValueError('Scan the library first')
+    secure_storage(store)
     db = store / 'enriched.json'
     data = read(db, {'albums': [], 'tracks': {}})
     overrides = read(store / 'track-overrides.json', {})
@@ -72,13 +74,14 @@ def apply(root, proposal):
     if changes:
         if db.exists():
             stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-            shutil.copy2(db, store / ('enriched.before-' + stamp + '.json'))
+            private_copy(db, store / ('enriched.before-' + stamp + '.json'))
         temp = db.with_suffix('.tmp')
-        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        private_write_text(temp, json.dumps(data, ensure_ascii=False, indent=2))
         temp.replace(db)
     return changes
 
 def main():
+    os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library-root', required=True, type=Path)
     sub = parser.add_subparsers(dest='action', required=True)

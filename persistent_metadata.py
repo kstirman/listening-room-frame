@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import gzip
 import requests
+from network_limits import fetch
 
 LOG = logging.getLogger(__name__)
 SCHEMA = '''
@@ -179,11 +180,12 @@ class MusicBrainz:
         delay = 1.1 - (time.monotonic() - self.last_request)
         if delay > 0:time.sleep(delay)
         self.last_request = time.monotonic()
-        r = self.get('https://musicbrainz.org/ws/2/'+entity, params=params,
-                     headers={'User-Agent':UA}, timeout=(4,12))
-        r.raise_for_status()
-        if len(r.content)>4_000_000:raise ValueError('Metadata response too large')
-        payload = r.json()
+        response = fetch(self.get, 'https://musicbrainz.org/ws/2/'+entity,
+                         max_bytes=4_000_000, total_seconds=16, params=params,
+                         same_origin_redirects=2,
+                         headers={'User-Agent':UA}, timeout=(4,12))
+        payload = response.json(max_bytes=4_000_000, max_depth=64,
+                                max_nodes=100_000, max_text=1_000_000)
         if not isinstance(payload,dict):raise ValueError('Invalid metadata response')
         self.cache.write([('musicbrainz-response',identity,payload)])
         return payload

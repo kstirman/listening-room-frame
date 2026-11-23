@@ -12,7 +12,6 @@ import sqlite3
 import time
 from html.parser import HTMLParser
 from urllib.parse import urlparse
-import xml.etree.ElementTree as ET
 import layouts
 import timing
 import liner_notes
@@ -36,6 +35,7 @@ from cover_images import normalized_cover
 from roon_source import RoonSource
 from sonos_source import SonosSource
 from spotify_source import SpotifySource
+from network_limits import fetch, json_value, xml_root
 
 import requests
 from samsungtvws.art.art import SamsungTVArt
@@ -43,6 +43,13 @@ from samsungtvws.art.art import SamsungTVArt
 LOG = logging.getLogger('frame-art')
 SERVICE = 'urn:schemas-upnp-org:service:AVTransport:1'
 ERROR_RETRY_SECONDS = 5
+TV_RESPONSE_BYTES = 100_000
+SOAP_RESPONSE_BYTES = 2_000_000
+BROWSE_TOTAL_BYTES = 8_000_000
+BROWSE_MAX_ITEMS = 10_000
+BROWSE_MAX_PAGES = 20
+CATALOG_RESPONSE_BYTES = 2_000_000
+ARTWORK_RESPONSE_BYTES = 20_000_000
 
 
 class MetaParser(HTMLParser):
@@ -69,13 +76,14 @@ class MetaParser(HTMLParser):
         if tag == 'script' and self.in_json:
             self.in_json = False
             try:
-                self.structured.append(json.loads(''.join(self.json_text)))
-            except ValueError:
+                self.structured.append(json_value(''.join(self.json_text),
+                                       max_bytes=1_000_000, max_depth=32,
+                                       max_nodes=20_000, max_text=500_000))
+            except (ValueError, requests.RequestException):
                 pass
 
 
-def metadata_values(xml):
-    root = ET.fromstring(xml)
+def _metadata_values(root):
     result = {}
     for item in root.iter():
         if item.tag.split('}')[-1] == 'item':
@@ -115,6 +123,12 @@ def metadata_values(xml):
             duration = timing.seconds(item.get('duration'))
             if duration: result['duration_seconds'] = duration
     return result
+
+
+def metadata_values(xml):
+    root = xml_root(xml, max_bytes=SOAP_RESPONSE_BYTES, max_depth=32,
+                    max_nodes=10_000, max_text=1_500_000)
+    return _metadata_values(root)
 
 
 class ArtworkUnavailable(Exception):
@@ -235,10 +249,14 @@ class Bridge:
 
     def soap(self, action):
         body = f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:{action} xmlns:u="{SERVICE}"><InstanceID>0</InstanceID></u:{action}></s:Body></s:Envelope>'
-        response = self.session.post(self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control', data=body,
-                                     headers={'SOAPAction': f'"{SERVICE}#{action}"', 'Content-Type': 'text/xml'}, timeout=8)
-        response.raise_for_status()
-        return {el.tag.split('}')[-1]: el.text for el in ET.fromstring(response.content).iter()}
+        response = fetch(
+            self.session.post,
+            self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control',
+            max_bytes=SOAP_RESPONSE_BYTES, total_seconds=8, data=body,
+            headers={'SOAPAction': f'"{SERVICE}#{action}"', 'Content-Type': 'text/xml'}, timeout=8)
+        root = xml_root(response.content, max_bytes=SOAP_RESPONSE_BYTES, max_depth=32,
+                        max_nodes=10_000, max_text=1_500_000)
+        return {el.tag.split('}')[-1]: el.text for el in root.iter()}
 
     def playback(self):
         self._media_fingerprint = 'missing'
@@ -268,21 +286,62 @@ class Bridge:
         if time.monotonic() - self.index_at > 3600 or not self.index_at:
             index = {}
             start = 0
+            pages = 0
+            response_bytes = 0
+            deadline = time.monotonic() + 30
             service = 'urn:schemas-upnp-org:service:ContentDirectory:1'
             while True:
+                if pages >= BROWSE_MAX_PAGES:
+                    raise ValueError('Library browse page limit exceeded')
                 body = f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="{service}"><ObjectID>0$items</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>{start}</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>'
-                r = self.session.post(self.config['minim_control'], data=body,
-                                      headers={'SOAPAction': f'"{service}#Browse"', 'Content-Type': 'text/xml'}, timeout=15)
-                r.raise_for_status()
-                response = {el.tag.split('}')[-1]: el.text for el in ET.fromstring(r.content).iter()}
-                for item in ET.fromstring(response['Result']):
-                    values = metadata_values(ET.tostring(item, encoding='unicode'))
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise requests.Timeout('Library browse exceeded total deadline')
+                reply = fetch(self.session.post, self.config['minim_control'],
+                              max_bytes=SOAP_RESPONSE_BYTES,
+                              total_seconds=min(15, remaining), data=body,
+                              headers={'SOAPAction': f'"{service}#Browse"',
+                                       'Content-Type': 'text/xml'}, timeout=15)
+                pages += 1
+                response_bytes += len(reply.content)
+                if response_bytes > BROWSE_TOTAL_BYTES:
+                    raise ValueError('Library browse byte limit exceeded')
+                envelope = xml_root(reply.content, max_bytes=SOAP_RESPONSE_BYTES,
+                                    max_depth=32, max_nodes=20_000,
+                                    max_text=1_900_000)
+                response = {el.tag.split('}')[-1]: el.text for el in envelope.iter()}
+                if not all(response.get(name) is not None
+                           for name in ('Result', 'NumberReturned', 'TotalMatches')):
+                    raise ValueError('Invalid library browse response')
+                if not re.fullmatch(r'[0-9]{1,8}', response['NumberReturned']) or not re.fullmatch(
+                        r'[0-9]{1,8}', response['TotalMatches']):
+                    raise ValueError('Invalid library browse counters')
+                count = int(response['NumberReturned'])
+                total = int(response['TotalMatches'])
+                if count > 500 or total > BROWSE_MAX_ITEMS:
+                    raise ValueError('Library browse item limit exceeded')
+                result = xml_root(response['Result'], max_bytes=SOAP_RESPONSE_BYTES,
+                                  max_depth=32, max_nodes=20_000,
+                                  max_text=1_900_000)
+                items = list(result)
+                if len(items) != count:
+                    raise ValueError('Library browse counter mismatch')
+                for item in items:
+                    values = _metadata_values(item)
                     resource = values.get('resource')
                     if resource:
                         index[resource] = values
-                count = int(response['NumberReturned'])
-                start += count
-                if not count or start >= int(response['TotalMatches']):
+                next_start = start + count
+                if next_start > total or next_start > BROWSE_MAX_ITEMS:
+                    raise ValueError('Invalid library browse progress')
+                if count == 0:
+                    if start < total:
+                        raise ValueError('Library browse made no progress')
+                    break
+                if next_start <= start:
+                    raise ValueError('Library browse made no progress')
+                start = next_start
+                if start >= total:
                     break
             self.local_index = index
             self.index_at = time.monotonic()
@@ -340,9 +399,11 @@ class Bridge:
 
     def television(self):
         # Do not send wake/power/input/audio commands. Verify TV identity first.
-        r = self.session.get(f"http://{self.config['tv']}:8001/api/v2/", timeout=4)
-        r.raise_for_status()
-        device = r.json()['device']
+        response = fetch(self.session.get, f"http://{self.config['tv']}:8001/api/v2/",
+                         max_bytes=TV_RESPONSE_BYTES, total_seconds=4,
+                         same_origin_redirects=2, timeout=4)
+        device = response.json(max_bytes=TV_RESPONSE_BYTES, max_depth=16,
+                               max_nodes=2_000, max_text=20_000)['device']
         if device.get('modelName') != self.config['tv_model']:
             raise RuntimeError('TV identity differs from configured model')
         # Samsung may report standby while Art Mode is displaying artwork.
@@ -519,10 +580,15 @@ class Bridge:
         if previous and previous.get('category') != 'complete' and not due:
             raise requests.RequestException('Catalog source pending or deferred')
         try:
-            r = self.session.get('https://www.qobuz.com/us-en/album/-/' + album_id, timeout=15)
-            r.raise_for_status()
+            deadline = time.monotonic() + 30
+            response = fetch(self.session.get,
+                             'https://www.qobuz.com/us-en/album/-/' + album_id,
+                             max_bytes=CATALOG_RESPONSE_BYTES, total_seconds=15,
+                             same_origin_redirects=2, timeout=15)
             import catalog_pages
-            page, outcome = catalog_pages.complete_result(r.text, album_id, self.session.get)
+            page, outcome = catalog_pages.complete_result(
+                response.text, album_id, self.session.get, deadline=deadline,
+                initial_bytes=len(response.content))
         except requests.RequestException as error:
             outcome = source_outcomes.scheduled(dict(source_outcomes.failure(error), stage='album'), previous, now)
             self.record_source_outcome(album_id, outcome)
@@ -924,17 +990,20 @@ class Bridge:
                 raise ValueError('No supported cover URL')
         if metadata.get('source') not in ('roon', 'sonos'):
             try:
-                r = self.session.get(url, timeout=15, allow_redirects=False) if inferred_cover else self.session.get(url, timeout=15)
-                r.raise_for_status()
-                if inferred_cover and (r.status_code != 200 or
-                        r.headers.get('Content-Type', '').split(';')[0].strip().lower() not in ('image/jpeg', 'image/png', 'image/webp')):
+                response = fetch(self.session.get, url,
+                                 max_bytes=ARTWORK_RESPONSE_BYTES,
+                                 total_seconds=15,
+                                 same_origin_redirects=0 if inferred_cover else 2,
+                                 timeout=15)
+                if inferred_cover and (response.status_code != 200 or
+                        response.headers.get('Content-Type', '').split(';')[0].strip().lower() not in ('image/jpeg', 'image/png', 'image/webp')):
                     raise ArtworkUnavailable('Current album artwork unavailable')
-                content = r.content
+                content = response.content
             except requests.RequestException as error:
                 if inferred_cover:
                     raise ArtworkUnavailable('Current album artwork unavailable') from error
                 raise
-        if len(content) > 20_000_000:
+        if len(content) > ARTWORK_RESPONSE_BYTES:
             if inferred_cover:
                 raise ArtworkUnavailable('Current album artwork unavailable')
             raise ValueError('Cover exceeds size limit')

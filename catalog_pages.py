@@ -1,6 +1,14 @@
 """Bounded public catalog pagination with explicit completeness evidence."""
 from html.parser import HTMLParser
 import re
+import time
+
+from network_limits import fetch
+
+
+MAX_PAGE_BYTES = 2_000_000
+MAX_CATALOG_BYTES = 4_000_000
+MAX_PAGES = 20
 
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 
@@ -31,7 +39,7 @@ def needs_refresh(rows):
                            (len(rows)%50==0 and any('_catalog_complete' not in r for r in rows.values())))
 
 
-def complete_result(page, album_id, get):
+def complete_result(page, album_id, get, *, deadline=None, initial_bytes=None):
     """Insert successive fragments inside the original track container.
 
     Keep prior work/disc headings in scope. Any failed/duplicate/oversized page
@@ -42,14 +50,22 @@ def complete_result(page, album_id, get):
     outcome = {'category': 'complete' if expected and expected == len(info.ids) else 'pending_partial', 'expected_tracks': expected, 'observed_tracks': len(info.ids), 'stage': 'pagination'}
     if not expected or expected<=len(info.ids) or info.end is None:return page, outcome
     if expected>1000 or not re.fullmatch(r'[A-Za-z0-9]{1,64}',album_id):return page, outcome
-    fragments=[];seen=set(info.ids);offset=len(seen)
+    fragments=[];seen=set(info.ids);offset=len(seen);pages=1
+    deadline = deadline or time.monotonic() + 30
+    consumed = initial_bytes if initial_bytes is not None else len(page.encode('utf-8'))
+    if consumed > MAX_CATALOG_BYTES:return page, outcome
     try:
         while offset<expected:
-            response=get('https://www.qobuz.com/v4/ajax/album/load-tracks',
-                         params={'albumId':album_id,'offset':offset,'limit':50,'store':'us-en'},
-                         headers={'X-Requested-With':'XMLHttpRequest','Referer':'https://www.qobuz.com/us-en/album/-/'+album_id},timeout=(3,5))
-            response.raise_for_status()
-            if len(response.content)>2_000_000:break
+            remaining = deadline - time.monotonic()
+            if pages >= MAX_PAGES or remaining <= 0:break
+            response=fetch(get, 'https://www.qobuz.com/v4/ajax/album/load-tracks',
+                           max_bytes=MAX_PAGE_BYTES, total_seconds=min(8, remaining),
+                           same_origin_redirects=2,
+                           params={'albumId':album_id,'offset':offset,'limit':50,'store':'us-en'},
+                           headers={'X-Requested-With':'XMLHttpRequest','Referer':'https://www.qobuz.com/us-en/album/-/'+album_id},timeout=(3,5))
+            pages += 1
+            if consumed + len(response.content) > MAX_CATALOG_BYTES:break
+            consumed += len(response.content)
             fragment=response.text;more=Page(fragment).ids
             if not more or len(more)>50 or seen.intersection(more) or len(seen)+len(more)>expected:break
             fragments.append(fragment);seen.update(more);offset=len(seen)
@@ -61,5 +77,5 @@ def complete_result(page, album_id, get):
     return page[:info.end]+''.join(fragments)+page[info.end:], outcome
 
 
-def complete(page, album_id, get):
-    return complete_result(page, album_id, get)[0]
+def complete(page, album_id, get, **limits):
+    return complete_result(page, album_id, get, **limits)[0]

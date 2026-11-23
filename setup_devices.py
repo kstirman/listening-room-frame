@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 import requests
+from network_limits import fetch
 
 
 def local_host(value):
@@ -21,11 +22,10 @@ def local_host(value):
 
 def probe_tv(host):
     host = local_host(host)
-    with requests.get(f'http://{host}:8001/api/v2/', timeout=4, allow_redirects=False) as r:
-        r.raise_for_status()
-        if len(r.content) > 100_000:
-            raise ValueError('Unexpected TV response')
-        device = r.json()['device']
+    response = fetch(requests.get, f'http://{host}:8001/api/v2/', max_bytes=100_000,
+                     total_seconds=4, timeout=4, allow_redirects=False)
+    device = response.json(max_bytes=100_000, max_depth=16, max_nodes=2_000,
+                           max_text=20_000)['device']
     model = device.get('modelName', '')
     if not model or not isinstance(model, str):
         raise ValueError('TV did not provide a model identifier')

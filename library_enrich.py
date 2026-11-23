@@ -2,7 +2,7 @@
 import json,sys,time,re,hashlib,io,os,unicodedata
 from pathlib import Path
 import mutagen,requests
-from PIL import Image
+from cover_images import normalized_cover
 ROOT=Path(os.environ.get('FRAME_LIBRARY_ROOT', '.')).expanduser().resolve()
 STORE=ROOT/'.listening-room-metadata'
 CACHE=STORE/'http-cache'
@@ -40,7 +40,8 @@ def coverbytes(m):
  return None
 
 def jpeg(data):
- im=Image.open(io.BytesIO(data));im.thumbnail((1600,1600));b=io.BytesIO();im.convert('RGB').save(b,'JPEG',quality=92);return b.getvalue()
+ with normalized_cover(io.BytesIO(data)) as image:
+  b=io.BytesIO();image.save(b,'JPEG',quality=92);return b.getvalue()
 def save_new(path,data):
  try:
   with path.open('xb') as f:f.write(data)

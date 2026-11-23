@@ -1,8 +1,8 @@
 """Bounded, read-only composition context from reviewed local-library metadata."""
 import json
 import re
-import subprocess
 import time
+import ffprobe_metadata
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 import timing
@@ -19,12 +19,10 @@ def target_file(resource, root, prefix):
 
 
 def probe(path):
-    result = subprocess.run(['ffprobe','-v','quiet','-analyzeduration','0','-probesize','32768',
-        '-show_entries','format=duration:format_tags','-of','json',str(path)],
-        capture_output=True,text=True,check=True,timeout=2)
-    data = json.loads(result.stdout).get('format', {})
-    tags = {k.lower():v for k,v in data.get('tags', {}).items()}
-    tags['duration_seconds'] = timing.seconds(data.get('duration'))
+    data = ffprobe_metadata.read(path, timeout=2,
+        probe_args=('-analyzeduration','0','-probesize','32768'))
+    tags = dict(data['tags'])
+    tags['duration_seconds'] = timing.seconds(data['duration'])
     return tags
 
 

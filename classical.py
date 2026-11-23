@@ -1,5 +1,6 @@
 """Conservative source metadata extraction. No inferred performer roles."""
-import re,json,subprocess
+import re,json
+import ffprobe_metadata
 import timing
 from pathlib import Path
 from urllib.parse import urlparse,unquote
@@ -113,12 +114,11 @@ def file_tags(resource,root,resource_prefix="/minimserver/*/AudirvanaLibrary/"):
  rel=unquote(re.sub(r'\*([0-9a-fA-F]{2})',r'%\1',path[len(marker):]))
  root=Path(root).resolve();file=(root/rel).resolve()
  if not file.is_relative_to(root) or not file.is_file():return {}
- r=subprocess.run(['ffprobe','-v','quiet','-show_entries','format=duration:format_tags','-of','json',str(file)],capture_output=True,text=True,timeout=8,check=True)
- data=json.loads(r.stdout).get('format',{})
- tags={k.lower():v for k,v in data.get('tags',{}).items()}
+ data=ffprobe_metadata.read(file,timeout=8)
+ tags=data['tags']
  aliases={'date':'date','year':'date','originaldate':'originalReleaseDate','originalyear':'originalReleaseDate','originalreleasedate':'originalReleaseDate','releasedate':'releaseDate','composer':'composer','conductor':'conductor','orchestra':'orchestra','ensemble':'orchestra','work':'work','composition':'work','movementname':'movementName','movementnumber':'movementNumber','title':'title','genre':'genre','soloist':'soloist','recordingdate':'recordingDate','recording_date':'recordingDate','recordeddate':'recordingDate','recordingyear':'recordingDate','recording_year':'recordingDate','compositiondate':'compositionDate','composition_date':'compositionDate','compositionyear':'compositionDate','composition_year':'compositionDate','composedate':'compositionDate'}
  result={dest:tags[src] for src,dest in aliases.items() if tags.get(src)}
- duration=timing.seconds(data.get('duration'))
+ duration=timing.seconds(data['duration'])
  if duration:result['duration_seconds']=duration
  if tags.get('movement'):
   key='movementNumber' if re.fullmatch(r'\d+(?:/\d+)?',tags['movement']) else 'movementName'

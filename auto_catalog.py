@@ -1,5 +1,4 @@
 """Bounded background catalog discovery; no credentials or playback control."""
-import json
 from html.parser import HTMLParser
 import re
 import threading
@@ -12,6 +11,7 @@ import catalog_pages
 import timing
 import music_catalog
 import liner_notes
+from network_limits import fetch as bounded_fetch, json_value
 from reviewed_catalog import select
 
 MAX_CANDIDATES = 12
@@ -59,8 +59,9 @@ def edition_rows(page, album, edition):
 def records(page):
     for text in re.findall(r'<script\b[^>]*type=[\"\']application/ld\+json[\"\'][^>]*>(.*?)</script>', page, re.S | re.I):
         try:
-            data = json.loads(text)
-        except (ValueError, TypeError):
+            data = json_value(text, max_bytes=1_000_000, max_depth=32,
+                              max_nodes=20_000, max_text=500_000)
+        except (ValueError, TypeError, requests.RequestException):
             continue
         yield from walk(data)
 
@@ -143,14 +144,16 @@ def album_rows(page, album, artist):
 
 
 def fetch(path, params=None):
-    response = requests.get('https://www.qobuz.com/us-en/' + path, params=params,
-                            timeout=(3, 5), headers={'User-Agent': 'ListeningRoomArtwork/1.0'})
-    response.raise_for_status()
-    if len(response.content) > 2_000_000:
-        raise ValueError('Catalog response too large')
+    deadline = time.monotonic() + 30
+    response = bounded_fetch(requests.get, 'https://www.qobuz.com/us-en/' + path,
+                             max_bytes=2_000_000, total_seconds=8,
+                             same_origin_redirects=2, params=params, timeout=(3, 5),
+                             headers={'User-Agent': 'ListeningRoomArtwork/1.0'})
     page = response.text
     if path.startswith('album/-/'):
-        page = catalog_pages.complete(page, path.rsplit('/', 1)[-1], requests.get)
+        page = catalog_pages.complete(page, path.rsplit('/', 1)[-1], requests.get,
+                                      deadline=deadline,
+                                      initial_bytes=len(response.content))
     return page
 
 

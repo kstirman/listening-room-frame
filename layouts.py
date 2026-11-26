@@ -4,6 +4,7 @@ import timing
 import dates
 import programme_context
 from playback_text import limit_text
+from cover_images import normalized_cover
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
@@ -45,11 +46,10 @@ def palette(cover):
 
 def sleeve(cover_path):
     """Keep the complete original cover in a fixed, nearly full-height area."""
-    with Image.open(cover_path) as original:
-        cover = ImageOps.exif_transpose(original).convert('RGB')
-    canvas = Image.new('RGB', (3840, 2160), palette(cover))
-    art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
-    canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2))
+    with normalized_cover(cover_path) as cover:
+        canvas = Image.new('RGB', (3840, 2160), palette(cover))
+        art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
+        canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2))
     return canvas
 
 
@@ -120,13 +120,12 @@ def current(cover_path, title, artist, output, recording_year='', date_line='', 
 
 def spotify(cover_path, metadata, output):
     """Current-track companion with an uncropped sleeve and official attribution."""
-    with Image.open(cover_path) as original:
-        cover = ImageOps.exif_transpose(original).convert('RGB')
-    canvas = Image.new('RGB', (3840, 2160), palette(cover))
-    art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
-    mask = Image.new('L', art.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, art.width-1, art.height-1), radius=8, fill=255)
-    canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2), mask)
+    with normalized_cover(cover_path) as cover:
+        canvas = Image.new('RGB', (3840, 2160), palette(cover))
+        art = ImageOps.contain(cover, (2080, 2080), Image.Resampling.LANCZOS)
+        mask = Image.new('L', art.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, art.width-1, art.height-1), radius=8, fill=255)
+        canvas.paste(art, (40+(2080-art.width)//2, 40+(2080-art.height)//2), mask)
     draw = ImageDraw.Draw(canvas)
     column = Column(canvas, y=360, bottom=1620)
     x, width = column.x, column.width
@@ -160,11 +159,11 @@ def collage(history, root, output):
         row_items = history[row*columns:(row+1)*columns]
         x0 = (3840 - (len(row_items)*size+(len(row_items)-1)*gap))//2
         for column, entry in enumerate(row_items):
-            image = Image.open(Path(root)/entry['cover']).convert('RGB')
-            image = ImageOps.contain(image,(size,size),Image.Resampling.LANCZOS)
-            x = x0 + column*(size+gap) + (size-image.width)//2
-            y = y0 + row*(size+gap) + (size-image.height)//2
-            canvas.paste(image,(x,y))
+            with normalized_cover(Path(root)/entry['cover']) as cover:
+                image = ImageOps.contain(cover,(size,size),Image.Resampling.LANCZOS)
+                x = x0 + column*(size+gap) + (size-image.width)//2
+                y = y0 + row*(size+gap) + (size-image.height)//2
+                canvas.paste(image,(x,y))
     canvas.save(output,quality=95)
 
 

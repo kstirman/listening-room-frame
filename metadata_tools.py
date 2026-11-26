@@ -92,6 +92,7 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library-root', required=True, type=Path)
+    parser.add_argument('--database', type=Path, help='Existing Frame catalog for an adopted library')
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('audit')
     command = sub.add_parser('apply')
@@ -99,6 +100,22 @@ def main():
     args = parser.parse_args()
     root = args.library_root.expanduser().resolve()
     if not root.is_dir(): parser.error('Library root must exist')
+    candidate = args.database or Path(os.environ.get('XDG_STATE_HOME', Path.home()/'.local/state'))/'frame-art/music-catalog.sqlite3'
+    if args.database and not candidate.is_file():
+        parser.error('Expected an existing catalog')
+    if candidate.is_file():
+        from music_catalog import Store
+        from library_authority import maintenance_lock, patch_review
+        store = Store(candidate)
+        if store.adopted(root):
+            if args.action == 'audit':
+                from catalog_maintenance import audit as catalog_audit
+                result = catalog_audit(candidate)
+            else:
+                with maintenance_lock():
+                    result = patch_review(store,root,read(args.proposal,{}))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
     result = audit(root) if args.action == 'audit' else {'fields_added': apply(root, read(args.proposal, {}))}
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

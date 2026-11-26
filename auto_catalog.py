@@ -203,7 +203,14 @@ class Resolver:
         if self.disk and status == 'ready':
             if edition and all(r.get('_edition_verified') == edition for r in albums[0].values()):
                 self.disk.put_edition(edition, albums[0], album, artist)
-            else:self.disk.save(key[:2], albums)
+                retained = self.disk.edition(edition)
+                if retained:
+                    albums = [retained]
+            else:
+                self.disk.save(key[:2], albums)
+                retained = self.disk.load(key[:2])
+                if retained:
+                    albums = retained[0]
         with self.lock:
             if keep_ready and status != 'ready' and key in self.cache and self.cache[key][2] == 'ready':
                 # A transient outage must not discard a usable saved recording.
@@ -220,6 +227,8 @@ class Resolver:
             return None, 'insufficient'
         edition = artwork_edition(metadata.get('albumArtURI'))
         key = (canonical(album), canonical(artist)) + ((edition,) if edition else ())
+        if not edition and self.disk and self.disk.ambiguous_name(key[:2]):
+            return None, 'ambiguous'
         with self.lock:
             cached = self.cache.get(key)
             version = self.disk.cache_revision() if self.disk else None

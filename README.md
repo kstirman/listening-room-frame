@@ -222,6 +222,7 @@ Tests use fake TV/network objects and temporary metadata fixtures. They cover re
 - `bridge.py`: playback watcher, artwork resolution, TV lifecycle and collage scheduling.
 - `layouts.py`: 4K album, classical and collage images.
 - `classical.py`, `dates.py`, `library_metadata.py`: metadata interpretation and local enrichment.
+- [Catalog authority and recovery](docs/catalog-authority.md) explains the optional migration to SQLite-owned reviews, portable-tag reconciliation and exact edition artwork.
 - `library_enrich.py`, `metadata_tools.py`: inventory, field audit and reviewed additions.
 - `frame-art.service`: optional systemd user service.
 

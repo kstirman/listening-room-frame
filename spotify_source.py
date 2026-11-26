@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import requests
 import safe_requests
+from playback_text import ELLIPSIS, limit_text
 
 SCOPE = 'user-read-currently-playing'
 TOKEN_URL = 'https://accounts.spotify.com/api/token'
@@ -116,9 +117,14 @@ def track_metadata(data):
         return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
     image = max(images, key=width)
     def text(value):
-        return value if isinstance(value, str) else ''
+        return limit_text(value)
     def artists(rows):
-        return '; '.join(text(row.get('name')) for row in rows if isinstance(row, dict)) if isinstance(rows, list) else ''
+        if not isinstance(rows, list):
+            return ''
+        names = [text(row.get('name')) for row in rows[:32] if isinstance(row, dict)]
+        if len(rows) > 32:
+            names.append(ELLIPSIS)
+        return limit_text('; '.join(filter(None, names)))
     duration = track.get('duration_ms')
     duration = duration / 1000 if isinstance(duration, (int, float)) and not isinstance(duration, bool) and math.isfinite(duration) and duration > 0 else None
     release = text(album.get('release_date'))

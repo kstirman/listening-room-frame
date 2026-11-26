@@ -58,3 +58,12 @@ test('track length survives snapshots; seek does not alter display identity', ()
   z.now_playing.length=value;s.update('Changed',{zones_changed:[z]});assert.equal(s.snapshot().duration_seconds,null);
  }
 });
+test('snapshot display metadata has code point and byte limits', () => {
+ const s=new ZoneState('speaker');s.pair('core');const z=zone('zone1','art1','🎵'.repeat(1000));
+ z.now_playing.three_line.line2='Artist '.repeat(1000);z.now_playing.three_line.line3='Album '.repeat(1000);
+ s.update('Subscribed',{zones:[z]});const lines=s.snapshot().lines;
+ for(const line of lines){
+  assert.ok(line.endsWith('…'));assert.ok([...line].length<=512);assert.ok(Buffer.byteLength(line)<=1024);
+ }
+ assert.ok(lines.reduce((total,line)=>total+Buffer.byteLength(line),0)<=3072);
+});

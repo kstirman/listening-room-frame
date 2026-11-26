@@ -32,6 +32,7 @@ import reviewed_catalog
 import classical
 import dates
 import safe_requests
+from playback_text import limit_texts
 from cover_images import normalized_cover
 from roon_source import RoonSource
 from sonos_source import SonosSource
@@ -44,6 +45,12 @@ from samsungtvws.art.art import SamsungTVArt
 LOG = logging.getLogger('frame-art')
 SERVICE = 'urn:schemas-upnp-org:service:AVTransport:1'
 ERROR_RETRY_SECONDS = 5
+MAX_UPNP_METADATA_CODEPOINTS = 131_072
+MAX_UPNP_METADATA_UTF8_BYTES = 262_144
+UPNP_DISPLAY_FIELDS = ('title', 'album', 'artist', 'albumArtist', 'composer',
+                       'conductor', 'orchestra', 'performer', 'soloist', 'genre',
+                       'date', 'work', 'group', 'movement', 'movementName',
+                       'movementNumber')
 TV_RESPONSE_BYTES = 100_000
 SOAP_RESPONSE_BYTES = 2_000_000
 BROWSE_TOTAL_BYTES = 8_000_000
@@ -123,10 +130,23 @@ def _metadata_values(root):
             result['resource'] = item.text
             duration = timing.seconds(item.get('duration'))
             if duration: result['duration_seconds'] = duration
+    fields = [name for name in UPNP_DISPLAY_FIELDS if name in result]
+    for name, value in zip(fields, limit_texts([result[name] for name in fields])):
+        result[name] = value
     return result
 
 
 def metadata_values(xml):
+    if isinstance(xml, bytes):
+        if len(xml) > MAX_UPNP_METADATA_UTF8_BYTES:
+            return {}
+    elif isinstance(xml, str):
+        sample = xml[:MAX_UPNP_METADATA_CODEPOINTS + 1]
+        if (len(sample) > MAX_UPNP_METADATA_CODEPOINTS
+                or len(sample.encode('utf-8')) > MAX_UPNP_METADATA_UTF8_BYTES):
+            return {}
+    else:
+        return {}
     root = xml_root(xml, max_bytes=SOAP_RESPONSE_BYTES, max_depth=32,
                     max_nodes=10_000, max_text=1_500_000)
     return _metadata_values(root)

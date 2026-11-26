@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from PIL import Image
 from bridge import Bridge
+from playback_text import MAX_TEXT_CODEPOINTS, MAX_TEXT_UTF8_BYTES
 from sonos_source import SonosSource
 
 
@@ -59,6 +60,13 @@ class SonosTests(unittest.TestCase):
         self.assertEqual(self.source.playback()[1]['duration_seconds'], 582)
         self.info['duration'] = '00:00:00'
         self.assertIsNone(self.source.playback()[1]['duration_seconds'])
+
+    def test_display_fields_are_bounded(self):
+        self.info.update(title='🎵' * 1000, artist='Artist ' * 1000, album='Album ' * 1000)
+        lines = self.source.playback()[1]['sonos_lines']
+        self.assertTrue(all(value.endswith('…') for value in lines))
+        self.assertTrue(all(len(value) <= MAX_TEXT_CODEPOINTS for value in lines))
+        self.assertTrue(all(len(value.encode('utf-8')) <= MAX_TEXT_UTF8_BYTES for value in lines))
 
     def test_missing_art(self):
         self.info['album_art'] = ''

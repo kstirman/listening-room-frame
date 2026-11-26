@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
 
 import safe_requests
+import requests
+from playback_text import limit_texts
 
 
 def key(values):
@@ -50,7 +52,7 @@ class SonosSource:
             if status != 'PLAYING':
                 return status, {}
             info = player.get_current_track_info()
-            lines = [info.get(k, '') or '' for k in ('title', 'artist', 'album')]
+            lines = limit_texts([info.get(k, '') or '' for k in ('title', 'artist', 'album')])
             art = info.get('album_art', '')
             if not art:
                 # SoCo can omit artwork when it successfully parses radio stream credits.

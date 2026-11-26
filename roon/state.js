@@ -1,6 +1,28 @@
 'use strict';
 const crypto = require('node:crypto');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+const MAX_TEXT_CODEPOINTS = 512;
+const MAX_TEXT_UTF8_BYTES = 1024;
+const ELLIPSIS = '…';
+const limitText = value => {
+  if (typeof value !== 'string') return '';
+  const characters = [];
+  let bytes = 0, clipped = false;
+  for (const character of value) {
+    const width = Buffer.byteLength(character);
+    if (characters.length >= MAX_TEXT_CODEPOINTS || bytes + width > MAX_TEXT_UTF8_BYTES) {
+      clipped = true; break;
+    }
+    characters.push(character); bytes += width;
+  }
+  if (!clipped) return characters.join('');
+  const ellipsisBytes = Buffer.byteLength(ELLIPSIS);
+  while (characters.length &&
+         (characters.length >= MAX_TEXT_CODEPOINTS || bytes + ellipsisBytes > MAX_TEXT_UTF8_BYTES)) {
+    bytes -= Buffer.byteLength(characters.pop());
+  }
+  return characters.join('') + ELLIPSIS;
+};
 // Transport subscriptions deliver full zone objects; seek-only changes do not
 // alter the display. Never choose a room implicitly.
 class ZoneState {
@@ -19,7 +41,7 @@ class ZoneState {
     const z = matches.length === 1 ? matches[0] : null;
     const n = z?.now_playing;
     const lines = n?.three_line || n?.two_line || n?.one_line || {};
-    const text = ['line1', 'line2', 'line3'].map(k => typeof lines[k] === 'string' ? lines[k] : '');
+    const text = ['line1', 'line2', 'line3'].map(k => limitText(lines[k]));
     const imageKey = typeof n?.image_key === 'string' ? n.image_key : '';
     return {
       version: 1, updated_at: Date.now() / 1000,

@@ -10,6 +10,7 @@ import time
 from urllib.parse import urlparse
 
 import requests
+import safe_requests
 from playback_text import ELLIPSIS, limit_text
 
 SCOPE = 'user-read-currently-playing'
@@ -145,6 +146,7 @@ class SpotifySource:
             raise ValueError('Set spotify_token_file to the absolute path created by spotify_auth.py.')
         self.path = Path(token_file).expanduser()
         self.session = session or requests.Session()
+        self.artwork_session = safe_requests.Session()
         self.clock = clock or time.monotonic
         self.next_request = 0
         self.last_good = float('-inf')
@@ -225,12 +227,10 @@ class SpotifySource:
         if not artwork_url(url):
             raise ValueError('Unsupported Spotify artwork URL')
         # Separate unauthenticated request: never send the API token to the CDN.
-        with requests.get(url, timeout=10, stream=True, allow_redirects=False) as response:
-            if response.status_code != 200:
-                raise ValueError('Spotify artwork unavailable')
-            content = bytearray()
-            for chunk in response.iter_content(65536):
-                content.extend(chunk)
-                if len(content) > 20_000_000:
-                    raise ValueError('Spotify cover exceeds size limit')
-            return bytes(content)
+        response = self.artwork_session.get(url, timeout=10, allow_redirects=False,
+                                            max_bytes=20_000_000)
+        if response.status_code != 200:
+            raise ValueError('Spotify artwork unavailable')
+        if len(response.content) > 20_000_000:
+            raise ValueError('Spotify cover exceeds size limit')
+        return response.content

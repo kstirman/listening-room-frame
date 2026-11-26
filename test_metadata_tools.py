@@ -30,6 +30,48 @@ class MetadataToolsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 apply(root, {'tracks': {'../escape.flac': {'fields': {'composer':'X'},'provenance':{'composer':'Source'}}}})
             self.assertFalse((root/'.listening-room-metadata/enriched.json').exists())
+    def test_reject_media_symlink_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'library';root.mkdir();store=root/'.listening-room-metadata';store.mkdir()
+            outside=Path(directory)/'outside.flac';outside.write_bytes(b'outside')
+            (root/'track.flac').symlink_to(outside)
+            proposal={'tracks':{'track.flac':{'fields':{'composer':'X'},'provenance':{'composer':'Source'}}}}
+            with self.assertRaises(ValueError):
+                apply(root, proposal)
+            self.assertFalse((store/'enriched.json').exists())
+    def test_reject_linked_metadata_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'library';outside=Path(directory)/'outside'
+            root.mkdir();outside.mkdir();(root/'track.flac').touch()
+            db=outside/'enriched.json';db.write_text(json.dumps({'tracks':{}}))
+            (root/'.listening-room-metadata').symlink_to(outside, target_is_directory=True)
+            proposal={'tracks':{'track.flac':{'fields':{'composer':'X'},'provenance':{'composer':'Source'}}}}
+            with self.assertRaises(ValueError):
+                apply(root, proposal)
+            with self.assertRaises(ValueError):
+                audit(root)
+            self.assertEqual(json.loads(db.read_text()), {'tracks':{}})
+    def test_reject_linked_sidecar_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'library';root.mkdir();store=root/'.listening-room-metadata';store.mkdir()
+            outside=Path(directory)/'outside.json';outside.write_text(json.dumps({'tracks':{}}))
+            (store/'inventory.json').symlink_to(outside)
+            with self.assertRaises(ValueError):
+                audit(root)
+            (store/'inventory.json').unlink()
+            (store/'enriched.json').symlink_to(outside)
+            with self.assertRaises(ValueError):
+                apply(root, {'tracks':{}})
+            self.assertEqual(json.loads(outside.read_text()), {'tracks':{}})
+    def test_predictable_temp_symlink_is_unused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'library';root.mkdir();(root/'track.flac').touch();store=root/'.listening-room-metadata';store.mkdir()
+            outside=Path(directory)/'outside.json';outside.write_text('unchanged')
+            (store/'enriched.tmp').symlink_to(outside)
+            proposal={'tracks':{'track.flac':{'fields':{'composer':'X'},'provenance':{'composer':'Source'}}}}
+            self.assertEqual(apply(root, proposal), 1)
+            self.assertEqual(outside.read_text(), 'unchanged')
+            self.assertEqual(json.loads((store/'enriched.json').read_text())['tracks']['track.flac']['fields'], {'composer':'X'})
     def test_audit_includes_crossover_and_overrides(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); store=root/'.listening-room-metadata';store.mkdir()
@@ -44,7 +86,7 @@ class MetadataToolsTests(unittest.TestCase):
             root=Path(directory);store=root/'.listening-room-metadata';cache=store/'http-cache';art=store/'covers'
             cache.mkdir(parents=True, mode=0o755);art.mkdir(mode=0o755)
             old=cache/'response.json';old.write_text('{}');old.chmod(0o644)
-            with patch.multiple(library_enrich, STORE=store, CACHE=cache, ART=art):
+            with patch.multiple(library_enrich, ROOT=root, STORE=store, CACHE=cache, ART=art):
                 library_enrich.init_storage()
                 library_enrich.private_write_text(store/'inventory.json', '{}')
                 library_enrich.save_new(art/'cover.jpg', b'image')

@@ -5,8 +5,9 @@ import json
 import logging
 import time
 import xml.etree.ElementTree as ET
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
+import safe_requests
 import requests
 from playback_text import limit_texts
 
@@ -29,8 +30,11 @@ class SonosSource:
         self.uid = uid
         self.speaker = None
         self.discovered_at = float('-inf')
+        self.artwork_origin = None
+        self.session = safe_requests.Session()
 
     def playback(self):
+        self.artwork_origin = None
         try:
             if self.speaker is None:
                 if time.monotonic() - self.discovered_at < 30:
@@ -61,7 +65,9 @@ class SonosSource:
                         pass
             if not art:
                 return 'PLAYING', {}
-            art = urljoin('http://' + player.ip_address + ':1400/', art)
+            artwork_origin = safe_requests.literal_http_origin(player.ip_address, 1400)
+            art = urljoin(artwork_origin + '/', art)
+            self.artwork_origin = artwork_origin
             album = key([lines[2], lines[1], art])
             return 'PLAYING', {'source': 'sonos', 'source_album_key': album,
                 'object_id': key([album, lines[0], info.get('uri', '')]),
@@ -76,23 +82,14 @@ class SonosSource:
 
     def cover(self, metadata):
         url = metadata['sonos_cover']
-        # Artwork URLs come from the selected trusted LAN speaker, never its audio URI.
-        for _ in range(5):
-            parsed = urlparse(url)
-            if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError('Unsupported Sonos artwork URL')
-            with requests.get(url, timeout=10, stream=True, allow_redirects=False) as response:
-                if response.is_redirect:
-                    url = urljoin(url, response.headers['Location'])
-                    continue
-                response.raise_for_status()
-                content = bytearray()
-                for chunk in response.iter_content(65536):
-                    content.extend(chunk)
-                    if len(content) > 20_000_000:
-                        raise ValueError('Sonos cover exceeds size limit')
-                return bytes(content)
-        raise ValueError('Too many Sonos artwork redirects')
+        # Permit the exact selected coordinator origin plus public service artwork.
+        trusted = (self.artwork_origin,) if self.artwork_origin else ()
+        response = self.session.get(url, timeout=10, max_redirects=5,
+                                    max_bytes=20_000_000, trusted_origins=trusted)
+        response.raise_for_status()
+        if len(response.content) > 20_000_000:
+            raise ValueError('Sonos cover exceeds size limit')
+        return response.content
 
 
 if __name__ == '__main__':

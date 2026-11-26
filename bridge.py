@@ -31,6 +31,7 @@ import programme_context
 import reviewed_catalog
 import classical
 import dates
+import safe_requests
 from playback_text import limit_texts
 from cover_images import normalized_cover
 from roon_source import RoonSource
@@ -168,7 +169,7 @@ class Bridge:
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_file = self.root / 'state.json'
         self.state = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}
-        self.session = requests.Session()
+        self.session = safe_requests.Session()
         self.session.headers['User-Agent'] = 'ListeningRoomArtwork/1.0'
         self.stopped_at = (time.monotonic() - config.get("idle_seconds", 120)
                            if self.state.get("view") == "photo" else None)
@@ -269,9 +270,9 @@ class Bridge:
 
     def soap(self, action):
         body = f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:{action} xmlns:u="{SERVICE}"><InstanceID>0</InstanceID></u:{action}></s:Body></s:Envelope>'
+        url = self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control'
         response = fetch(
-            self.session.post,
-            self.config.get('renderer_control_url') or self.config['renderer'] + '/AVTransport/control',
+            self.session.post, url, trusted_origins=(url,),
             max_bytes=SOAP_RESPONSE_BYTES, total_seconds=8, data=body,
             headers={'SOAPAction': f'"{SERVICE}#{action}"', 'Content-Type': 'text/xml'}, timeout=8)
         root = xml_root(response.content, max_bytes=SOAP_RESPONSE_BYTES, max_depth=32,
@@ -321,7 +322,8 @@ class Bridge:
                               max_bytes=SOAP_RESPONSE_BYTES,
                               total_seconds=min(15, remaining), data=body,
                               headers={'SOAPAction': f'"{service}#Browse"',
-                                       'Content-Type': 'text/xml'}, timeout=15)
+                                       'Content-Type': 'text/xml'}, timeout=15,
+                              trusted_origins=(self.config['minim_control'],))
                 pages += 1
                 response_bytes += len(reply.content)
                 if response_bytes > BROWSE_TOTAL_BYTES:
@@ -419,9 +421,10 @@ class Bridge:
 
     def television(self):
         # Do not send wake/power/input/audio commands. Verify TV identity first.
-        response = fetch(self.session.get, f"http://{self.config['tv']}:8001/api/v2/",
+        url = f"http://{self.config['tv']}:8001/api/v2/"
+        response = fetch(self.session.get, url, trusted_origins=(url,),
                          max_bytes=TV_RESPONSE_BYTES, total_seconds=4,
-                         same_origin_redirects=2, timeout=4)
+                         same_origin_redirects=0, timeout=4)
         device = response.json(max_bytes=TV_RESPONSE_BYTES, max_depth=16,
                                max_nodes=2_000, max_text=20_000)['device']
         if device.get('modelName') != self.config['tv_model']:
@@ -941,6 +944,7 @@ class Bridge:
     def cover(self, metadata):
         album_id = metadata.get('album_id')
         inferred_cover = False
+        trusted_art_hosts = ()
         title = metadata.get('album', '')
         artist = metadata.get('albumArtist') or metadata.get('artist', '')
         if metadata.get('source') == 'roon':
@@ -1008,13 +1012,16 @@ class Bridge:
                            and parsed.hostname in self.config['local_art_hosts'])
             if not (qobuz_cover or local_cover):
                 raise ValueError('No supported cover URL')
+            if local_cover:
+                trusted_art_hosts = self.config['local_art_hosts']
         if metadata.get('source') not in ('roon', 'sonos'):
             try:
                 response = fetch(self.session.get, url,
                                  max_bytes=ARTWORK_RESPONSE_BYTES,
                                  total_seconds=15,
                                  same_origin_redirects=0 if inferred_cover else 2,
-                                 timeout=15)
+                                 timeout=15,
+                                 **({"trusted_hosts": trusted_art_hosts} if trusted_art_hosts else {}))
                 if inferred_cover and (response.status_code != 200 or
                         response.headers.get('Content-Type', '').split(';')[0].strip().lower() not in ('image/jpeg', 'image/png', 'image/webp')):
                     raise ArtworkUnavailable('Current album artwork unavailable')

@@ -1,8 +1,12 @@
 """Read-only audio inventory plus reversible artwork sidecars. Never edits audio."""
 import json,sys,time,re,hashlib,io,os,stat,unicodedata
+from contextlib import contextmanager
 from pathlib import Path
 import mutagen,requests
 from cover_images import normalized_cover
+from metadata_fs import (harden_private_tree, open_private_directory, open_regular_beneath, open_root,
+                         regular_file_beneath, regular_file_exists_at,
+                         read_json_at, write_json_atomic_at, write_new_bytes_at)
 ROOT=Path(os.environ.get('FRAME_LIBRARY_ROOT', '.')).expanduser().resolve()
 STORE=ROOT/'.listening-room-metadata'
 CACHE=STORE/'http-cache'
@@ -75,21 +79,30 @@ def private_copy(source,target):
  except Exception:
   Path(target).unlink(missing_ok=True);raise
 
+@contextmanager
+def storage():
+ with open_root(ROOT) as root_fd:
+  with open_private_directory(root_fd,'.listening-room-metadata',create=True) as store_fd:
+   harden_private_tree(store_fd)
+   with open_private_directory(store_fd,'http-cache',create=True) as cache_fd:
+    with open_private_directory(store_fd,'covers',create=True) as art_fd:
+     yield root_fd,store_fd,cache_fd,art_fd
+
 def init_storage():
- for p in (STORE,CACHE,ART):private_directory(p)
- secure_storage(STORE)
+ with storage():pass
 
 def get(url):
  global last
- init_storage()
- f=CACHE/(hashlib.sha256(url.encode()).hexdigest()+'.json')
- if f.exists():return json.loads(f.read_text())
- if 'musicbrainz.org' in url:time.sleep(max(0,1.15-(time.monotonic()-last)));last=time.monotonic()
- for attempt in range(3):
-  r=SESSION.get(url,timeout=25)
-  if r.status_code not in (429,502,503,504):break
-  time.sleep(3*(attempt+1));last=time.monotonic()
- r.raise_for_status();data=r.json();private_write_text(f,json.dumps(data));return data
+ with storage() as (_,_,cache_fd,_):
+  name=hashlib.sha256(url.encode()).hexdigest()+'.json';missing=object()
+  cached=read_json_at(cache_fd,name,missing)
+  if cached is not missing:return cached
+  if 'musicbrainz.org' in url:time.sleep(max(0,1.15-(time.monotonic()-last)));last=time.monotonic()
+  for attempt in range(3):
+   r=SESSION.get(url,timeout=25)
+   if r.status_code not in (429,502,503,504):break
+   time.sleep(3*(attempt+1));last=time.monotonic()
+  r.raise_for_status();data=r.json();write_json_atomic_at(cache_fd,name,data,ensure_ascii=True,indent=None);return data
 
 def first(t,*names):
  for n in names:
@@ -115,31 +128,35 @@ def save_new(path,data):
  except FileExistsError:return False
 
 def scan():
- init_storage()
  albums={};errors=[]
- for p in sorted(ROOT.rglob('*')):
-  if p.name.startswith('._'):continue
-  if p.suffix.lower() not in {'.flac','.aif','.aiff','.wav','.m4a','.mp3'}:continue
-  try:
-   m=mutagen.File(p);raw={str(k).lower():[str(x) for x in v] if isinstance(v,list) else str(v) for k,v in (m.tags or {}).items() if not str(k).startswith('APIC') and k not in ('covr','metadata_block_picture')}
-   title=first(raw,'title','tit2','©nam') or p.stem;album=first(raw,'album','talb','©alb');artist=first(raw,'albumartist','album artist','tpe2','aart') or first(raw,'artist','tpe1','©art')
-   key=str(p.parent.relative_to(ROOT))+'|'+album
-   a=albums.setdefault(key,{'directory':str(p.parent.relative_to(ROOT)),'album':album,'artist':artist,'tracks':[]})
-   pic=coverbytes(m);cf=ART/(hashlib.sha256(key.encode()).hexdigest()+'.jpg')
-   if pic and not cf.exists():save_new(cf,jpeg(pic))
-   if cf.exists():a['cover']=str(cf);a['cover_source']='embedded image in this album'
-   t={'path':str(p.relative_to(ROOT)),'title':title,'tags':raw,'duration':round(m.info.length,2),'embedded_art':bool(pic)};a['tracks'].append(t)
-   if len(a['tracks'])==1:
-    names=[re.sub(r'["*/:<>?\\|]','',album),'folder','cover',p.stem]
-    for name in names:
-     for ext in ('.jpg','.png','.webp','.JPG','.PNG'):
-      f=p.parent/(name+ext)
-      if f.is_file():
-       a['cover']=str(f);a['cover_source']='existing local image';break
-     if a.get('cover_source')=='existing local image':break
-  except Exception as e:errors.append({'path':str(p),'error':str(e)})
- out={'albums':list(albums.values()),'errors':errors};private_write_text(STORE/'inventory.json',json.dumps(out,ensure_ascii=False,indent=2));print(json.dumps({'albums':len(albums),'tracks':sum(len(a['tracks']) for a in albums.values()),'albums_with_local_cover':sum(bool(a.get('cover')) for a in albums.values()),'errors':errors[:10]}),flush=True)
- return out
+ with storage() as (root_fd,store_fd,_,art_fd):
+  for p in sorted(ROOT.rglob('*')):
+   if p.name.startswith('._'):continue
+   if p.suffix.lower() not in {'.flac','.aif','.aiff','.wav','.m4a','.mp3'}:continue
+   try:
+    relative=p.relative_to(ROOT)
+    with open_regular_beneath(root_fd,relative) as media:
+     m=mutagen.File(media);raw={str(k).lower():[str(x) for x in v] if isinstance(v,list) else str(v) for k,v in (m.tags or {}).items() if not str(k).startswith('APIC') and k not in ('covr','metadata_block_picture')}
+     title=first(raw,'title','tit2','©nam') or p.stem;album=first(raw,'album','talb','©alb');artist=first(raw,'albumartist','album artist','tpe2','aart') or first(raw,'artist','tpe1','©art')
+     key=str(p.parent.relative_to(ROOT))+'|'+album
+     a=albums.setdefault(key,{'directory':str(p.parent.relative_to(ROOT)),'album':album,'artist':artist,'tracks':[]})
+     pic=coverbytes(m);cover_name=hashlib.sha256(key.encode()).hexdigest()+'.jpg';cf=ART/cover_name
+     cover_exists=regular_file_exists_at(art_fd,cover_name)
+     if pic and not cover_exists:
+      write_new_bytes_at(art_fd,cover_name,jpeg(pic));cover_exists=regular_file_exists_at(art_fd,cover_name)
+     if cover_exists:a['cover']=str(cf);a['cover_source']='embedded image in this album'
+     t={'path':str(relative),'title':title,'tags':raw,'duration':round(m.info.length,2),'embedded_art':bool(pic)};a['tracks'].append(t)
+    if len(a['tracks'])==1:
+     names=[re.sub(r'["*/:<>?\\|]','',album),'folder','cover',p.stem]
+     for name in names:
+      for ext in ('.jpg','.png','.webp','.JPG','.PNG'):
+       f=p.parent/(name+ext)
+       if regular_file_beneath(root_fd,f.relative_to(ROOT)):
+        a['cover']=str(f);a['cover_source']='existing local image';break
+      if a.get('cover_source')=='existing local image':break
+   except Exception as e:errors.append({'path':str(p),'error':str(e)})
+  out={'albums':list(albums.values()),'errors':errors};write_json_atomic_at(store_fd,'inventory.json',out);print(json.dumps({'albums':len(albums),'tracks':sum(len(a['tracks']) for a in albums.values()),'albums_with_local_cover':sum(bool(a.get('cover')) for a in albums.values()),'errors':errors[:10]}),flush=True)
+  return out
 
 if __name__=='__main__':
  import argparse

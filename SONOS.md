@@ -26,7 +26,7 @@ The usual Frame authorization, Art Mode, manual-selection and restoration behavi
 
 ## Metadata and service limits
 
-Title, artist and album come from Sonos; the display does not invent classical composer, conductor or movement fields. Movement information appears when the supplied title contains it. Artwork is fetched from the URL supplied by the trusted speaker, including external service hosts; HTTP(S), redirects and download size are bounded. Stream URLs are hashed for change detection, never downloaded as audio or logged.
+Title, artist and album come from Sonos; the display does not invent classical composer, conductor or movement fields. Movement information appears when the supplied title contains it. Artwork is fetched only from the selected coordinator's port 1400 or an external service host whose addresses are public. HTTP(S) redirects are bounded and every hop is revalidated; loopback, link-local and unrelated private destinations are rejected. Stream URLs are hashed for change detection, never downloaded as audio or logged.
 
 Sonos playback from services such as Apple Music or Spotify may expose useful metadata, but each service/input needs testing. This is not general access to what is playing on an iPhone, HomePod or arbitrary Spotify Connect device. AirPlay, radio, TV and line-in metadata/artwork may be absent or incomplete. Music and artwork rights and service terms still apply; this adapter is not service approval for artwork redistribution.
 

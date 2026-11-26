@@ -108,7 +108,7 @@ class LocalMatchTests(unittest.TestCase):
             with patch('local_match.local_composition.probe',return_value=TAGS):
                 b.card(meta,None)
                 b.session.get.assert_called_once_with(
-                    'http://example.test/reviewed.jpg',timeout=15,
+                    'http://example.test/reviewed.jpg',timeout=15,trusted_hosts=['example.test'],
                     headers={'Accept-Encoding':'identity'},stream=True,
                     allow_redirects=False)
                 b.card(meta,None)

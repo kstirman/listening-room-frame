@@ -6,26 +6,37 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+import safe_requests
 import requests
 from network_limits import fetch
 
 
-def local_host(value):
+def _local_addresses(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', value):
         raise ValueError('Enter a local hostname or IPv4 address, without a URL or port.')
     addresses = socket.getaddrinfo(value, None, family=socket.AF_INET)
-    if not addresses or not all(ipaddress.ip_address(a[4][0]).is_private and
-                                not ipaddress.ip_address(a[4][0]).is_loopback for a in addresses):
+    values = list(dict.fromkeys(address[4][0] for address in addresses))
+    if not values or not all(ipaddress.ip_address(address).is_private and
+                             safe_requests.address_allowed(address, allow_private=True)
+                             for address in values):
         raise ValueError('The device must have a private local-network address.')
+    return values
+
+
+def local_host(value):
+    _local_addresses(value)
     return value
 
 
 def probe_tv(host):
-    host = local_host(host)
-    response = fetch(requests.get, f'http://{host}:8001/api/v2/', max_bytes=100_000,
-                     total_seconds=4, timeout=4, allow_redirects=False)
-    device = response.json(max_bytes=100_000, max_depth=16, max_nodes=2_000,
-                           max_text=20_000)['device']
+    addresses = _local_addresses(host)
+    url = f'http://{host}:8001/api/v2/'
+    with safe_requests.Session(trusted_origins=(url,)) as session:
+        session.pin(url, addresses[0])
+        response = fetch(session.get, url, max_bytes=100_000,
+                         total_seconds=4, timeout=4)
+        device = response.json(max_bytes=100_000, max_depth=16,
+                               max_nodes=2_000, max_text=20_000)['device']
     model = device.get('modelName', '')
     if not model or not isinstance(model, str):
         raise ValueError('TV did not provide a model identifier')

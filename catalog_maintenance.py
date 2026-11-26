@@ -95,7 +95,7 @@ def backup(database, output):
                 path.write_text(payload)
                 sources.append({'kind': kind, 'original_path': source_path, 'archive_path': str(path.relative_to(root))})
         (root/'RESTORE.json').write_text(json.dumps({'documents': sources, 'instructions':
-            'Stop only the artwork service before replacing its SQLite database. Preserve newer data first. Restore source documents only after comparing current versions; they remain authoritative. Restart artwork and verify. This archive excludes audio, photos, tokens, passwords and application configuration.'}, indent=2))
+            'Stop only the artwork service before replacing its SQLite database. Preserve newer data first. Restore source documents only after comparing current versions; adopted libraries keep reviewed facts and artwork associations in SQLite. Restart artwork and verify. This archive excludes audio, photos, tokens, passwords and application configuration.'}, indent=2))
         files = sorted(p for p in root.rglob('*') if p.is_file())
         manifest = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         (root/'SHA256.json').write_text(json.dumps(manifest, indent=2))

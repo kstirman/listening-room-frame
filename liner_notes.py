@@ -57,11 +57,15 @@ def lookup_data(metadata, data):
             continue
         if key(album.get('album')) != key(metadata['album']) or key(album.get('artist')) != key(metadata['artist']):
             continue
+        if any(album.get(k) and album[k] != metadata.get(k) for k in ('album_id','source_album_key')):
+            continue
         tracks = album.get('tracks', [])
         if not isinstance(tracks, list):
             continue
         for track in tracks:
             if not isinstance(track, dict):
+                continue
+            if track.get('track_id') and track['track_id'] != metadata.get('object_id'):
                 continue
             duration = timing.seconds(track.get('duration_seconds'))
             if key(track.get('title')) == key(metadata['title']) and duration and abs(duration-length) <= 2:

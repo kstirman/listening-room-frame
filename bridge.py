@@ -704,10 +704,12 @@ class Bridge:
         catalog_unavailable = False
         local_status = None
         local_resource = None
+        managed_local = bool(self.config.get('library_root') and
+                             self.music_catalog.adopted(self.config['library_root']))
         if not metadata.get('album_id') and self.config.get('library_root') and urlparse(metadata.get('resource', '')).path.startswith('/audirvana/'):
             try:
                 match, local_status = self.music_catalog.match_local(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
-                if not match and local_status != 'local_ambiguous':
+                if not managed_local and not match and local_status != 'local_ambiguous':
                     match, local_status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
                 if match:
                     local_resource, fields = match
@@ -778,12 +780,17 @@ class Bridge:
                     enriched.update(classical.file_tags(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
                 except Exception as error:
                     LOG.warning('File metadata unavailable: %s', type(error).__name__)
-                # Reviewed metadata remains usable even if ffprobe cannot read a file.
-                try:
-                    enriched.update(library_metadata.lookup(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
-                except Exception as error:
-                    LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
-            if work_timing is None and not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
+                if managed_local:
+                    prefix = self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')
+                    if urlparse(metadata['resource']).path.startswith(prefix):
+                        local_status = 'local_unavailable'
+                else:
+                    # Reviewed metadata remains usable even if ffprobe cannot read a file.
+                    try:
+                        enriched.update(library_metadata.lookup(metadata['resource'], self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')))
+                    except Exception as error:
+                        LOG.warning('Saved metadata unavailable: %s', type(error).__name__)
+            if not managed_local and work_timing is None and not metadata.get('album_id') and metadata.get('resource') and self.config.get('library_root'):
                 try:
                     work_timing = self.local_compositions.context(local_resource or metadata['resource'], self.config['library_root'], enriched, self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
                 except Exception as error:
@@ -815,7 +822,8 @@ class Bridge:
             notes = liner_notes.from_credits(enriched.get('credits', ''))
             notes.update(liner_notes.extract(enriched))
             notes.update(liner_notes.lookup_data(enriched, self.music_catalog.document('liner', {}) or {}))
-            notes.update(liner_notes.lookup(enriched, self.config))
+            if not managed_local:
+                notes.update(liner_notes.lookup(enriched, self.config))
         if self.config.get('recording_research_enabled') and local_status != 'local_ambiguous':
             local_context = music_context.lookup(enriched, self.music_catalog.document('music_context', {}))
             need_context = not (local_context or notes.get('note') or programme_context.extract(enriched))
@@ -916,17 +924,28 @@ class Bridge:
 
     def local_art_url(self, metadata):
         """Reuse reviewed artwork only after a unique local recording match."""
-        overrides = self.config.get('local_art_overrides', {})
+        overrides = self.music_catalog.art_overrides(self.config.get('library_root'),
+                                                    self.config.get('local_art_overrides', {}))
         resources = [(metadata.get('resource', ''), metadata.get('album', ''))]
         if self.config.get('library_root') and urlparse(resources[0][0]).path.startswith('/audirvana/'):
             try:
-                match, status = self.local_matches.lookup(metadata, self.config['library_root'], self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/'))
+                root = self.config['library_root']
+                prefix = self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')
+                match, status = self.music_catalog.match_local(metadata, root, prefix)
+                if not match and status != 'local_ambiguous' and not self.music_catalog.adopted(root):
+                    match, status = self.local_matches.lookup(metadata, root, prefix)
                 if match:
                     resource, fields = match
                     resources = [(resource, album) for album in
                                  {metadata.get('album', ''), fields.get('album', '')} if album]
             except Exception as error:
                 LOG.warning('Local artwork match unavailable: %s', type(error).__name__)
+        root = self.config.get('library_root')
+        if root and resources:
+            prefix = self.config.get('library_resource_prefix', '/minimserver/*/AudirvanaLibrary/')
+            edition = self.music_catalog.local_edition(resources[0][0],root,prefix)
+            if edition and edition in overrides:
+                return overrides[edition]
         choices = set()
         for resource, album in resources:
             directory = urlparse(resource).path.rsplit('/', 1)[0]

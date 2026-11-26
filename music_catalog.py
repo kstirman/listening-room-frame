@@ -24,6 +24,7 @@ import local_match
 import timing
 import classical
 import dates
+import library_authority
 import catalog_repairs
 
 LOG = logging.getLogger(__name__)
@@ -50,6 +51,30 @@ CREATE TABLE IF NOT EXISTS encountered_tracks(identity TEXT PRIMARY KEY,
 
 def key(value):
     return local_match.key(value)
+
+
+def edition_id(rows):
+    ids = {r.get('_catalog_album_id') for r in rows.values()}
+    return next(iter(ids)) if len(ids) == 1 and None not in ids else None
+
+
+def retain_edition(db, edition, rows):
+    import source_outcomes
+    old = db.execute('SELECT payload FROM editions WHERE id=?',(edition,)).fetchone()
+    if old:
+        prior = json.loads(old[0])
+        if prior == rows:
+            return prior
+        merged = source_outcomes.merge_refresh(prior, rows, edition)
+        if merged is None:
+            db.execute('INSERT OR REPLACE INTO source_outcomes VALUES(?,?)', (edition,
+                       json.dumps({'category':'pending_identity_conflict','next_retry_at':None})))
+            return prior
+        rows = merged
+    text = json.dumps(rows)
+    if not old or text != old[0]:
+        db.execute('INSERT OR REPLACE INTO editions VALUES(?,?,?)', (edition,time.time(),text))
+    return rows
 
 
 def apple_double(path):
@@ -154,6 +179,13 @@ class Store:
                     not isinstance(rows, dict) or not 1 <= len(rows) <= 2048 or
                     any(not isinstance(v, dict) for v in rows.values()) for rows in albums):
                 return None
+            with self.connect() as db:
+                for index, rows in enumerate(albums):
+                    edition = edition_id(rows)
+                    if edition:
+                        current = db.execute('SELECT payload FROM editions WHERE id=?',(edition,)).fetchone()
+                        if current:
+                            albums[index] = json.loads(current[0])
             for rows in albums:
                 for track_id, fields in rows.items():
                     fields.setdefault('_catalog_track_id', track_id)
@@ -165,19 +197,41 @@ class Store:
         except (OSError, sqlite3.Error, ValueError, TypeError):
             return None
 
+    @available(False)
+    def ambiguous_name(self, lookup_key):
+        if not self.path.exists():
+            return False
+        with self.connect() as db:
+            return bool(db.execute('SELECT 1 FROM catalogs WHERE album=? AND artist=? AND version=2',
+                                   lookup_key).fetchone())
+
     def save(self, lookup_key, albums):
-        albums=[self.dated_rows(rows) for rows in albums]
-        payload = json.dumps(albums)
-        if not albums or len(payload) > 2_000_000:
+        """Persist a discovery without dropping a known edition or its reviewed fields."""
+        albums = [self.dated_rows(rows) for rows in albums]
+        if not albums or len(json.dumps(albums)) > 2_000_000:
             return
         try:
             with self.connect() as db:
-                db.execute('INSERT OR REPLACE INTO catalogs VALUES(?,?,?,?,?)', (*lookup_key,1,time.time(),payload))
+                db.execute('BEGIN IMMEDIATE')
+                prior = db.execute('SELECT payload,version FROM catalogs WHERE album=? AND artist=?',lookup_key).fetchone()
+                alternatives = json.loads(prior[0]) if prior else []
                 for rows in albums:
-                    ids = {r.get('_catalog_album_id') for r in rows.values()}
-                    if len(ids) == 1 and None not in ids:
-                        db.execute('INSERT OR REPLACE INTO editions VALUES(?,?,?)',
-                                   (next(iter(ids)),time.time(),json.dumps(rows)))
+                    edition = edition_id(rows)
+                    if edition:
+                        rows = retain_edition(db, edition, rows)
+                        alternatives = [r for r in alternatives if edition_id(r) != edition]
+                    if rows not in alternatives:
+                        alternatives.append(rows)
+                # Never discard alternatives to force an apparently unique match.
+                # Oversized name-only results are deliberately unreadable by load.
+                data = json.dumps(alternatives)
+                overflow = len(alternatives) > 12 or len(data) > 2_000_000
+                version = 2 if overflow or (prior and prior[1] == 2) else 1
+                if overflow and prior:
+                    data = prior[0]
+                if prior != (data,version):
+                    db.execute('INSERT OR REPLACE INTO catalogs VALUES(?,?,?,?,?)',
+                               (*lookup_key,version,time.time(),data))
         except (OSError, sqlite3.Error):
             LOG.warning('Music catalog write unavailable')
 
@@ -194,16 +248,15 @@ class Store:
         """Save an explicit edition and add it to, never replace, known alternatives."""
         if not re.fullmatch(r'[A-Za-z0-9]{1,64}', album_id) or not rows:
             return
-        rows=self.dated_rows(rows)
-        with self.connect() as db:
-            db.execute('INSERT OR REPLACE INTO editions VALUES(?,?,?)', (album_id,time.time(),json.dumps(rows)))
-        if album and artist:
-            lookup_key = (key(album),key(artist))
-            prior = self.load(lookup_key)
-            alternatives = prior[0] if prior else []
-            alternatives = [r for r in alternatives if not all(v.get('_catalog_album_id') == album_id for v in r.values())]
-            if len(alternatives) < 12:
-                self.save(lookup_key, alternatives+[rows])
+        if any(r.get('_catalog_album_id',album_id) != album_id for r in rows.values()):
+            return
+        if album and artist and edition_id(rows) == album_id:
+            self.save((key(album),key(artist)),[rows])
+        else:
+            rows = self.dated_rows(rows)
+            with self.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                retain_edition(db, album_id, rows)
 
     @available()
     def source_outcome(self, album_id):
@@ -220,6 +273,8 @@ class Store:
         return True
 
     def sync_documents(self, config, source_dir):
+        if config.get('library_root') and self.adopted(config['library_root']):
+            return
         paths = {'liner':config.get('liner_notes_file'),
                  'music_context':config.get('music_context_file'),
                  'catalog_repairs':Path(source_dir)/'catalog-repairs.json',
@@ -243,25 +298,86 @@ class Store:
             row = db.execute('SELECT payload FROM documents WHERE kind=?',(kind,)).fetchone()
         return json.loads(row[0]) if row else default
 
+    @available(True)
+    def adopted(self, root):
+        with self.connect() as db:
+            return library_authority.adopted(db, root)
+
+    @available({})
+    def art_overrides(self, root, legacy):
+        if root:
+            with self.connect() as db:
+                if library_authority.adopted(db, root):
+                    value = db.execute('SELECT artwork FROM library_authority_roots WHERE root=?',
+                                       (str(Path(root).resolve()),)).fetchone()[0]
+                    return json.loads(value) if value is not None else legacy
+        return legacy
+
+    @available()
+    def local_edition(self, resource, root, prefix):
+        target = local_composition.target_file(resource,root,prefix)
+        if target:
+            with self.connect() as db:
+                row = db.execute("SELECT size,mtime,json_extract(payload,'$.local_edition') "
+                                 "FROM local_tracks WHERE path=? AND root=?",
+                                 (str(target),str(Path(root).resolve()))).fetchone()
+            stat = target.stat()
+            if row and row[:2] == (stat.st_size,stat.st_mtime_ns):
+                return row[2]
+        return None
+
+    def portable_status(self, resource, root, prefix):
+        """Observed tags, desired differences and evidence. No write or install claim."""
+        target = local_composition.target_file(resource, root, prefix)
+        if not target:
+            return None
+        with self.connect() as db:
+            row = db.execute('SELECT size,mtime,payload FROM local_tracks WHERE path=? AND root=?',
+                             (str(target),str(Path(root).resolve()))).fetchone()
+        stat = target.stat()
+        if not row or row[:2] != (stat.st_size, stat.st_mtime_ns):
+            return {'identity_status':'verification_required'}
+        data = json.loads(row[2])
+        _, observed, desired = library_authority.projections(data, [])
+        publication = None
+        edition = data.get('local_edition')
+        if edition:
+            with self.connect() as db:
+                receipt = db.execute("SELECT destination,manifest FROM intake_publications WHERE "
+                                     "edition=? AND state='published'",(edition,)).fetchone()
+            if receipt:
+                folder = Path(root).resolve()/receipt[0]
+                if target.is_relative_to(folder):
+                    relative = target.relative_to(folder).as_posix()
+                    publication = next((r for r in json.loads(receipt[1])['tracks']
+                                        if r['path'] == relative and r['prepared_sha256'] ==
+                                        data.get('verified_file_sha256')), None)
+        return {'authority_version':data.get('authority_version',0), 'local_edition':edition,
+                'verified_file_sha256':data.get('verified_file_sha256'), 'publication':publication,
+                'observed_tags':observed, 'reviewed_desires':desired,
+                'research':data.get('catalog_research',{}),
+                'reviewed':data.get('reviewed',{}), 'protected':data.get('overrides',{})}
+
     def sync_library(self, root):
-        """Read tags only for new/changed files; reviewed overlays always win.
+        """Refresh observed file tags. An adopted catalog owns its reviewed evidence.
 
         No audio writes. A failed probe is reported and never replaces good data.
         Retired paths remain in the catalog but cannot match a missing file.
         """
         root = Path(root).resolve(); meta = root/'.listening-room-metadata'
         inventory_path = meta/'inventory.json'
-        inventory = json.loads(inventory_path.read_text()) if inventory_path.exists() else {}
+        managed = self.adopted(root)
         reviewed_path = meta/'enriched.json'; overrides_path = meta/'track-overrides.json'
-        reviewed = json.loads(reviewed_path.read_text()).get('tracks',{}) if reviewed_path.exists() else {}
-        overrides = json.loads(overrides_path.read_text()) if overrides_path.exists() else {}
+        reviewed = json.loads(reviewed_path.read_text()).get('tracks',{}) if not managed and reviewed_path.exists() else {}
+        overrides = json.loads(overrides_path.read_text()) if not managed and overrides_path.exists() else {}
         paths = sorted(p for p in root.rglob('*') if p.suffix.lower() in {'.flac','.wav','.aiff','.aif','.m4a','.mp3','.dsf','.ape','.ogg','.opus','.wv'} and p.is_file())
         sidecars = {p for p in paths if apple_double(p)}
         paths = [p for p in paths if p not in sidecars]
         result = {'files':len(paths),'saved':0,'probed':0,'errors':0,
-                  'excluded_sidecars':len(sidecars)}
+                  'excluded_sidecars':len(sidecars), 'identity_pending':0}
         date_registry=self.document('work_dates',[]) or []
         with self.connect() as db:
+            receipts = library_authority.publication_tracks(db, root) if managed else {}
             prior = {name:(size,mtime,payload) for name,size,mtime,payload in db.execute(
                 'SELECT path,size,mtime,payload FROM local_tracks WHERE root=?',(str(root),))}
         def read(path):
@@ -270,6 +386,26 @@ class Store:
             try:
                 stat = p.stat(); old = prior.get(str(p))
                 unchanged = old and old[:2] == (stat.st_size,stat.st_mtime_ns)
+                receipt = receipts.get(p)
+                if receipt and receipt[1] != 'published':
+                    return p,stat,old,None,False
+                if receipt and (not unchanged or json.loads(old[2]).get('local_edition') != receipt[0]):
+                    with p.open('rb') as file:
+                        actual = hashlib.file_digest(file, 'sha256').hexdigest()
+                    if actual != receipt[2]:
+                        return p,stat,old,None,False
+                    if old and json.loads(old[2]).get('local_edition') not in (None, receipt[0]):
+                        return p,stat,old,None,False
+                if managed and old and not unchanged:
+                    previous = json.loads(old[2])
+                    restoring_known_edition = receipt and previous.get('local_edition') == receipt[0]
+                    if not restoring_known_edition:
+                        expected = previous.get('verified_file_sha256')
+                        if not expected:
+                            return p,stat,old,None,False
+                        with p.open('rb') as file:
+                            if hashlib.file_digest(file,'sha256').hexdigest() != expected:
+                                return p,stat,old,None,False
                 tags = json.loads(old[2])['tags'] if unchanged else local_composition.probe(p)
                 after = p.stat()
                 if (after.st_size,after.st_mtime_ns) != (stat.st_size,stat.st_mtime_ns):return None
@@ -288,6 +424,30 @@ class Store:
                     result['errors'] += 1
                     continue
                 p,stat,old,tags,probed = item
+                if managed:
+                    if tags is None:
+                        db.execute('INSERT INTO library_identity_pending VALUES(?,?,?,?) ON CONFLICT(root,path) '
+                                   'DO UPDATE SET size=excluded.size,mtime=excluded.mtime '
+                                   'WHERE size!=excluded.size OR mtime!=excluded.mtime',
+                                   (str(root),str(p.relative_to(root)),stat.st_size,stat.st_mtime_ns))
+                        # A reused path alone does not prove recording identity.
+                        result['identity_pending'] += 1
+                        continue
+                    db.execute('DELETE FROM library_identity_pending WHERE root=? AND path=?',
+                               (str(root), str(p.relative_to(root))))
+                    record = json.loads(old[2]) if old else {
+                        'authority_version':1, 'source':str(p),
+                        'reviewed':{}, 'overrides':{}, 'catalog_research':{}}
+                    receipt = receipts.get(p)
+                    if not old or probed or (receipt and record.get('local_edition') != receipt[0]):
+                        record['tags'] = tags
+                        if receipt:
+                            record['local_edition'] = receipt[0]
+                            record['verified_file_sha256'] = receipt[2]
+                        library_authority.save_fields(db,p,root,stat.st_size,stat.st_mtime_ns,record,date_registry)
+                    result['probed'] += int(probed)
+                    result['saved'] += 1
+                    continue
                 result['probed'] += int(probed)
                 name = str(p.relative_to(root))
                 try:
@@ -314,9 +474,13 @@ class Store:
                 except Exception:
                     result['errors'] += 1
             # Keep inventory and reviewed source provenance within the same DB.
-            for kind,p in [('inventory',inventory_path),('enriched',reviewed_path),('overrides',overrides_path)]:
+            for kind,p in [] if managed else [('inventory',inventory_path),('enriched',reviewed_path),('overrides',overrides_path)]:
                 if p.exists():
-                    db.execute('INSERT OR REPLACE INTO documents VALUES(?,?,?,?,?)', (kind,str(p),str(p.stat().st_mtime_ns),time.time(),p.read_text()))
+                    stamp = str(p.stat().st_mtime_ns)
+                    old_doc = db.execute('SELECT source,stamp FROM documents WHERE kind=?',(kind,)).fetchone()
+                    if old_doc != (str(p),stamp):
+                        db.execute('INSERT OR REPLACE INTO documents VALUES(?,?,?,?,?)',
+                                   (kind,str(p),stamp,time.time(),p.read_text()))
         self.revision += 1
         return result
 
@@ -326,9 +490,10 @@ class Store:
         self.last_sync = time.monotonic()
         def run():
             try:
-                self.sync_documents(config, source_dir)
-                if config.get('library_root'):
-                    self.sync_library(config['library_root'])
+                with library_authority.maintenance_lock():
+                    self.sync_documents(config, source_dir)
+                    if config.get('library_root'):
+                        self.sync_library(config['library_root'])
             except Exception as error:
                 LOG.warning('Music catalog refresh deferred: %s',type(error).__name__)
             finally:
@@ -347,12 +512,23 @@ class Store:
             stat = target.stat()
             if row[:2] != (stat.st_size,stat.st_mtime_ns):
                 return None
-            fields = dates.catalog_fields(json.loads(row[2])['fields'],self.document('work_dates',[]) or [])
+            data = json.loads(row[2])
+            fields = data['fields']
+            managed = data.get('authority_version') == 1
+            if not managed:
+                fields = dates.catalog_fields(fields, self.document('work_dates',[]) or [])
+            if data.get('local_edition'):
+                fields = dict(fields, local_edition=data['local_edition'], source_album_key=data['local_edition'])
             context = None
             if fields.get('work') and fields.get('composer'):
                 candidates = {}
                 for path,size,mtime,payload in db.execute('SELECT path,size,mtime,payload FROM local_tracks WHERE root=?',(str(Path(root).resolve()),)):
-                    item = json.loads(payload)['fields']
+                    other = json.loads(payload)
+                    item = other['fields']
+                    if managed and not fields.get('composition_group'):
+                        edition = data.get('local_edition')
+                        if not edition or other.get('local_edition') != edition:
+                            continue
                     if (item.get('work'),item.get('composer')) != (fields['work'],fields['composer']):
                         continue
                     p = Path(path)
@@ -480,4 +656,6 @@ if __name__ == '__main__':
     parser.add_argument('--legacy-cache')
     args = parser.parse_args(); store = Store(args.database)
     if args.legacy_cache:store.migrate(args.legacy_cache)
-    if args.library_root:print(json.dumps(store.sync_library(args.library_root)))
+    if args.library_root:
+        with library_authority.maintenance_lock():
+            print(json.dumps(store.sync_library(args.library_root)))

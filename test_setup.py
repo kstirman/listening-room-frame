@@ -53,6 +53,18 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(upnp['local_art_hosts'],['music.local'])
         with self.assertRaises(ValueError):validate_config({**self.config,'source':'upnp','renderer_control_url':'file:///etc/passwd'})
 
+    def test_tv_probe_streams_bounded_identity(self):
+        response=Mock(content=b'{"device":{"modelName":"FRAME","name":"Living Room"}}',
+                      headers={},status_code=200,encoding='utf-8')
+        with patch('setup_devices.safe_requests.Session.get',return_value=response) as get:
+            self.assertEqual(probe_tv('frame.local'),
+                             {'host':'frame.local','model':'FRAME','name':'Living Room'})
+        get.assert_called_once_with(
+            'http://frame.local:8001/api/v2/',timeout=4,
+            headers={'Accept-Encoding':'identity'},stream=True,
+            allow_redirects=False)
+        response.close.assert_called_once()
+
     def test_launch_serialized_and_stop_disables_resume(self):
         self.app.save(self.config)
         process=Mock();process.poll.return_value=None

@@ -30,8 +30,8 @@ class Tests(unittest.TestCase):
   data=io.BytesIO();Image.new('RGB',(32,32),'red').save(data,format='JPEG')
   self.b.session=Mock();self.b.session.get.return_value.content=data.getvalue()
   Bridge.cover(self.b,metadata)
-  self.b.session.get.assert_called_once_with(
-   chosen,timeout=15,trusted_hosts=['192.0.2.10'])
+  self.b.session.get.assert_called_once_with(chosen,timeout=15,trusted_hosts=['192.0.2.10'],
+   headers={'Accept-Encoding':'identity'},stream=True,allow_redirects=False)
  def test_saved_metadata_survives_unreadable_audio_tags(self):
   self.b.config['library_root']='/unused'
   saved={'classical':True,'composer':'Ludwig van Beethoven','work':'Symphony No. 6','conductor':'Arturo Toscanini','recordingDate':'1952','compositionDate':'1808'}
@@ -120,7 +120,8 @@ class Tests(unittest.TestCase):
   url='https://static.qobuz.com/images/covers/ab/cd.jpg'
   with patch('bridge.layouts.current'):
    _,title=Bridge.cover(self.b,{'album_id':'abc','album':'New album','artist':'New artist','albumArtURI':url})
-  self.assertEqual(title,'New album');self.b.session.get.assert_called_once_with(url,timeout=15)
+  self.assertEqual(title,'New album');self.b.session.get.assert_called_once_with(url,timeout=15,
+   headers={'Accept-Encoding':'identity'},stream=True,allow_redirects=False)
   self.assertFalse(Bridge.qobuz_cover_url('https://secret@static.qobuz.com/images/covers/a.jpg'))
  def test_sparse_reviewed_qobuz_captions_and_cover_without_page(self):
   import io
@@ -139,7 +140,8 @@ class Tests(unittest.TestCase):
   with patch('bridge.layouts.current'):
    _,title=Bridge.cover(self.b,metadata)
   self.assertEqual(title,'Current soundtrack');self.assertEqual(self.b.state['artist'],'Soundtrack band')
-  self.b.session.get.assert_called_once_with(url,timeout=15);self.b.album_page.assert_not_called()
+  self.b.session.get.assert_called_once_with(url,timeout=15,
+   headers={'Accept-Encoding':'identity'},stream=True,allow_redirects=False);self.b.album_page.assert_not_called()
  def test_reviewed_cover_rejects_other_edition_and_unsafe_url(self):
   import requests
   from bridge import ArtworkUnavailable
@@ -171,7 +173,8 @@ class Tests(unittest.TestCase):
   with patch('bridge.layouts.current') as render:
    _,title=Bridge.cover(self.b,{'album_id':'examplealbum09ab'})
   self.assertEqual(title,'');self.assertEqual(self.b.state['artist'],'')
-  self.b.session.get.assert_called_once_with('https://static.qobuz.com/images/covers/ab/09/examplealbum09ab_600.jpg',timeout=15,allow_redirects=False)
+  self.b.session.get.assert_called_once_with('https://static.qobuz.com/images/covers/ab/09/examplealbum09ab_600.jpg',timeout=15,
+   headers={'Accept-Encoding':'identity'},stream=True,allow_redirects=False)
   self.assertEqual(render.call_args.args[1:3],('',''))
   self.assertEqual(self.b.state['history'][0]['key'],'qobuz:examplealbum09ab')
  def test_sparse_album_cdn_candidate_failure_does_not_save_history(self):
@@ -280,7 +283,8 @@ class Tests(unittest.TestCase):
   with patch('bridge.layouts.current'):
    _,title=Bridge.cover(self.b,metadata)
   self.assertEqual(title,'Album')
-  self.b.session.get.assert_called_once_with(url,timeout=15)
+  self.b.session.get.assert_called_once_with(url,timeout=15,
+   headers={'Accept-Encoding':'identity'},stream=True,allow_redirects=False)
   rows['2']['album']='Conflicting album'
   self.assertNotIn('album',self.b.reviewed_edition_album(metadata))
  def test_exact_saved_cover_survives_page_outage(self):

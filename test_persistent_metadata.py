@@ -75,7 +75,7 @@ class PermanentMetadataTests(unittest.TestCase):
             self.assertEqual(restarted.lookup(META)['title'],'One');thread.assert_not_called()
         self.assertEqual(self.cache.get('jplay','fixture'),ALBUM)
     def test_api_response_reused_forever_and_throttled(self):
-        response=Mock(content=b'{}');response.json.return_value={'releases':[]}
+        response=Mock(content=b'{"releases":[]}')
         get=Mock(return_value=response);provider=MusicBrainz(self.cache,get)
         provider.request('release',{'query':'first'})
         with patch('persistent_metadata.time.sleep') as sleep:

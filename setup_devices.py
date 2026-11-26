@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 import safe_requests
+import requests
+from network_limits import fetch
 
 
 def _local_addresses(value):
@@ -31,10 +33,10 @@ def probe_tv(host):
     url = f'http://{host}:8001/api/v2/'
     with safe_requests.Session(trusted_origins=(url,)) as session:
         session.pin(url, addresses[0])
-        with session.get(url, timeout=4, allow_redirects=False,
-                         max_bytes=100_000) as r:
-            r.raise_for_status()
-            device = r.json()['device']
+        response = fetch(session.get, url, max_bytes=100_000,
+                         total_seconds=4, timeout=4)
+        device = response.json(max_bytes=100_000, max_depth=16,
+                               max_nodes=2_000, max_text=20_000)['device']
     model = device.get('modelName', '')
     if not model or not isinstance(model, str):
         raise ValueError('TV did not provide a model identifier')

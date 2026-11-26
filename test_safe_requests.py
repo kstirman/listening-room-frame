@@ -97,6 +97,27 @@ class SafeRequestTests(unittest.TestCase):
                 session.get('http://192.168.1.20:1401/admin')
         self.assertEqual(send.call_count, 1)
 
+    def test_pinned_stream_keeps_response_budget_and_closes_adapter(self):
+        from network_limits import fetch, ResponseLimitError
+        session = safe_requests.Session()
+        for content, succeeds in ((b'image', True), (b'x' * 11, False)):
+            reply = response(content=content)
+            adapter = Mock()
+            with self.subTest(succeeds=succeeds), \
+                    patch('safe_requests.socket.getaddrinfo', return_value=answer('93.184.216.34')), \
+                    patch.object(session, '_send_pinned', return_value=(reply, adapter)), \
+                    patch.object(session, '_consume') as consume:
+                if succeeds:
+                    self.assertEqual(fetch(session.get, 'https://covers.example/art',
+                                           max_bytes=10, total_seconds=1).content, b'image')
+                else:
+                    with self.assertRaises(ResponseLimitError):
+                        fetch(session.get, 'https://covers.example/art',
+                              max_bytes=10, total_seconds=1)
+                consume.assert_not_called()
+                adapter.close.assert_called_once()
+
+
 
 if __name__ == '__main__':
     unittest.main()

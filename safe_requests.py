@@ -191,6 +191,16 @@ class Session(requests.Session):
                     response.close()
                     adapter.close()
                     continue
+                if stream:
+                    close_response = response.close
+                    def close_stream(close_response=close_response, adapter=adapter):
+                        try:
+                            close_response()
+                        finally:
+                            adapter.close()
+                    response.close = close_stream
+                    response.history = history
+                    return response
                 self._consume(response, max_bytes)
                 response.history = history
                 response.close()

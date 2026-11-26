@@ -171,16 +171,15 @@ class SourceTests(unittest.TestCase):
                     'https://user:secret@i.scdn.co/image/abc','http://i.scdn.co/image/abc','https://i.scdn.co:444/image/abc',
                     'https://i.scdn.co/image/abc?token=secret'):
             with self.assertRaises(ValueError):self.source.cover({'spotify_cover':url})
-        r=response();r.__enter__=Mock(return_value=r);r.__exit__=Mock(return_value=False)
-        r.iter_content.return_value=[b'cover']
-        with patch('spotify_source.requests.get',return_value=r) as get:
+        r=response();r.content=b'cover'
+        with patch.object(self.source.artwork_session,'get',return_value=r) as get:
             self.assertEqual(self.source.cover({'spotify_cover':COVER}),b'cover')
-            get.assert_called_once_with(COVER,timeout=10,stream=True,allow_redirects=False)
+            get.assert_called_once_with(COVER,timeout=10,allow_redirects=False,max_bytes=20_000_000)
         r.status_code=302
-        with patch('spotify_source.requests.get',return_value=r):
+        with patch.object(self.source.artwork_session,'get',return_value=r):
             with self.assertRaises(ValueError):self.source.cover({'spotify_cover':COVER})
-        r.status_code=200;r.iter_content.return_value=[b'x'*20_000_001]
-        with patch('spotify_source.requests.get',return_value=r):
+        r.status_code=200;r.content=b'x'*20_000_001
+        with patch.object(self.source.artwork_session,'get',return_value=r):
             with self.assertRaises(ValueError):self.source.cover({'spotify_cover':COVER})
 
 

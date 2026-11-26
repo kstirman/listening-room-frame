@@ -40,8 +40,9 @@ class SetupTests(unittest.TestCase):
         (self.app.root/'display/state.json').write_text('{"owned":"CARD"}')
         with self.assertRaises(ValueError):self.app.save({**self.config,'tv':'another.local'})
 
-    def test_public_or_loopback_devices_rejected(self):
-        for ip in ('8.8.8.8','127.0.0.1'):
+    def test_nonlocal_or_special_devices_rejected(self):
+        for ip in ('8.8.8.8', '127.0.0.1', '169.254.169.254',
+                   '224.0.0.1', '0.0.0.0'):
             with patch('setup_devices.socket.getaddrinfo',return_value=[(2,1,6,'',(ip,0))]):
                 with self.assertRaises(ValueError):local_host('device.local')
 
@@ -55,7 +56,7 @@ class SetupTests(unittest.TestCase):
     def test_tv_probe_streams_bounded_identity(self):
         response=Mock(content=b'{"device":{"modelName":"FRAME","name":"Living Room"}}',
                       headers={},status_code=200,encoding='utf-8')
-        with patch('setup_devices.requests.get',return_value=response) as get:
+        with patch('setup_devices.safe_requests.Session.get',return_value=response) as get:
             self.assertEqual(probe_tv('frame.local'),
                              {'host':'frame.local','model':'FRAME','name':'Living Room'})
         get.assert_called_once_with(

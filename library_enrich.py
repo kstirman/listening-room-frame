@@ -1,10 +1,10 @@
 """Read-only audio inventory plus reversible artwork sidecars. Never edits audio."""
-import json,sys,time,re,hashlib,io,os,unicodedata
+import json,sys,time,re,hashlib,io,os,stat,unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 import mutagen,requests
-from PIL import Image
-from metadata_fs import (open_private_directory, open_regular_beneath, open_root,
+from cover_images import normalized_cover
+from metadata_fs import (harden_private_tree, open_private_directory, open_regular_beneath, open_root,
                          regular_file_beneath, regular_file_exists_at,
                          read_json_at, write_json_atomic_at, write_new_bytes_at)
 ROOT=Path(os.environ.get('FRAME_LIBRARY_ROOT', '.')).expanduser().resolve()
@@ -13,11 +13,77 @@ CACHE=STORE/'http-cache'
 ART=STORE/'covers'
 SESSION=requests.Session();SESSION.headers['User-Agent']='ListeningRoomMetadata/1.0 (private music library enrichment)'
 last=0
+PRIVATE_DIRECTORY_MODE=0o700
+PRIVATE_FILE_MODE=0o600
+
+def _require_owner(info,path):
+ if info.st_uid != os.getuid():raise PermissionError(f'Metadata artifact is not owned by the current user: {path}')
+
+def private_directory(path):
+ path=Path(path);path.mkdir(mode=PRIVATE_DIRECTORY_MODE,exist_ok=True)
+ flags=os.O_RDONLY|getattr(os,'O_DIRECTORY',0)|getattr(os,'O_NOFOLLOW',0)
+ try:fd=os.open(path,flags)
+ except OSError as e:raise PermissionError(f'Metadata directory must not be a symbolic link: {path}') from e
+ try:
+  info=os.fstat(fd);_require_owner(info,path)
+  if not stat.S_ISDIR(info.st_mode):raise PermissionError(f'Metadata path is not a directory: {path}')
+  os.fchmod(fd,PRIVATE_DIRECTORY_MODE)
+ finally:os.close(fd)
+
+def private_file(path):
+ path=Path(path)
+ flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)
+ try:fd=os.open(path,flags)
+ except OSError as e:raise PermissionError(f'Metadata file must not be a symbolic link: {path}') from e
+ try:
+  info=os.fstat(fd);_require_owner(info,path)
+  if not stat.S_ISREG(info.st_mode):raise PermissionError(f'Metadata path is not a regular file: {path}')
+  os.fchmod(fd,PRIVATE_FILE_MODE)
+ finally:os.close(fd)
+
+def secure_storage(store):
+ """Restrict an existing metadata tree after verifying every artifact owner."""
+ private_directory(store)
+ for path in sorted(Path(store).rglob('*'),key=lambda item:len(item.parts)):
+  info=path.lstat()
+  if stat.S_ISLNK(info.st_mode):raise PermissionError(f'Metadata artifacts must not be symbolic links: {path}')
+  (private_directory if stat.S_ISDIR(info.st_mode) else private_file)(path)
+
+def _private_writer(path,exclusive=False):
+ path=Path(path)
+ flags=os.O_WRONLY|os.O_CREAT|getattr(os,'O_NOFOLLOW',0)
+ if exclusive:flags|=os.O_EXCL
+ fd=os.open(path,flags,PRIVATE_FILE_MODE)
+ try:
+  info=os.fstat(fd);_require_owner(info,path)
+  if not stat.S_ISREG(info.st_mode):raise PermissionError(f'Metadata path is not a regular file: {path}')
+  os.fchmod(fd,PRIVATE_FILE_MODE)
+  if not exclusive:os.ftruncate(fd,0)
+  return fd
+ except Exception:
+  os.close(fd);raise
+
+def private_write_text(path,data):
+ fd=_private_writer(path)
+ with os.fdopen(fd,'w',encoding='utf-8') as stream:stream.write(data)
+
+def private_write_bytes(path,data,exclusive=False):
+ fd=_private_writer(path,exclusive=exclusive)
+ with os.fdopen(fd,'wb') as stream:stream.write(data)
+
+def private_copy(source,target):
+ fd=_private_writer(target,exclusive=True)
+ try:
+  with os.fdopen(fd,'wb') as writer,Path(source).open('rb') as reader:
+   while chunk:=reader.read(1024*1024):writer.write(chunk)
+ except Exception:
+  Path(target).unlink(missing_ok=True);raise
 
 @contextmanager
 def storage():
  with open_root(ROOT) as root_fd:
   with open_private_directory(root_fd,'.listening-room-metadata',create=True) as store_fd:
+   harden_private_tree(store_fd)
    with open_private_directory(store_fd,'http-cache',create=True) as cache_fd:
     with open_private_directory(store_fd,'covers',create=True) as art_fd:
      yield root_fd,store_fd,cache_fd,art_fd
@@ -53,7 +119,14 @@ def coverbytes(m):
  return None
 
 def jpeg(data):
- im=Image.open(io.BytesIO(data));im.thumbnail((1600,1600));b=io.BytesIO();im.convert('RGB').save(b,'JPEG',quality=92);return b.getvalue()
+ with normalized_cover(io.BytesIO(data)) as image:
+  b=io.BytesIO();image.save(b,'JPEG',quality=92);return b.getvalue()
+def save_new(path,data):
+ try:
+  private_write_bytes(path,data,exclusive=True)
+  return True
+ except FileExistsError:return False
+
 def scan():
  albums={};errors=[]
  with storage() as (root_fd,store_fd,_,art_fd):
@@ -87,6 +160,7 @@ def scan():
 
 if __name__=='__main__':
  import argparse
+ os.umask(0o077)
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--library-root',required=True,type=Path)
  args=parser.parse_args()

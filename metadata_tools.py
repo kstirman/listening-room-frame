@@ -2,11 +2,12 @@
 import argparse
 import datetime
 import json
+import os
 from pathlib import Path
 
 import classical
 from library_enrich import first
-from metadata_fs import (copy_file_exclusive_at, open_private_directory, open_root,
+from metadata_fs import (harden_private_tree, copy_file_exclusive_at, open_private_directory, open_root,
                          read_json_at, regular_file_exists_at,
                          require_regular_beneath, write_json_atomic_at)
 
@@ -27,6 +28,7 @@ def audit(root):
         with open_private_directory(
                 root_fd, '.listening-room-metadata',
                 missing_message='Run library_enrich.py --library-root first') as store_fd:
+            harden_private_tree(store_fd)
             inventory = read_json_at(store_fd, 'inventory.json', None)
             if inventory is None:
                 raise ValueError('Run library_enrich.py --library-root first')
@@ -55,6 +57,7 @@ def apply(root, proposal):
         with open_private_directory(
                 root_fd, '.listening-room-metadata',
                 missing_message='Scan the library first') as store_fd:
+            harden_private_tree(store_fd)
             db_exists = regular_file_exists_at(store_fd, 'enriched.json')
             data = read_json_at(store_fd, 'enriched.json', {'albums': [], 'tracks': {}})
             overrides = read_json_at(store_fd, 'track-overrides.json', {})
@@ -86,6 +89,7 @@ def apply(root, proposal):
             return changes
 
 def main():
+    os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--library-root', required=True, type=Path)
     sub = parser.add_subparsers(dest='action', required=True)

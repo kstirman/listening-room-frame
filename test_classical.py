@@ -1,10 +1,18 @@
 import tempfile, unittest
 from pathlib import Path
-from unittest.mock import Mock
-from classical import Tracks,normalize
+from unittest.mock import Mock,patch
+from classical import Tracks,file_tags,normalize
 from bridge import Bridge
 
 class ClassicalTests(unittest.TestCase):
+ def test_file_tags_preserves_supported_aliases_and_duration(self):
+  with tempfile.TemporaryDirectory() as root:
+   Path(root,'track.flac').touch()
+   data={'duration':'61.4','tags':{'composer':'Composer','movement':'2/4','recordingdate':'1951'}}
+   with patch('classical.ffprobe_metadata.read',return_value=data):
+    result=file_tags('http://host/library/track.flac',root,'/library/')
+   self.assertEqual(result,{'composer':'Composer','movementNumber':'2/4',
+                            'recordingDate':'1951','duration_seconds':61})
  def test_recital_standalone_titles_and_disc_labels(self):
   p=Tracks();p.feed('''<div id="playerTracks"><p class="player__work">Two Pieces</p><div data-track="1" data-gtm='{"product":{"category":"classique"}}'><div class="track__item--name">No. 1, Nocturne</div></div><div data-track="2" data-gtm='{"product":{"category":"classique"}}'><div class="track__item--name">Barcarolle No. 5, Op. 66</div></div><p class="player__work" data-disk="2">DISC 2</p><div data-track="3" data-gtm='{"product":{"category":"jazz"}}'><div class="track__item--name">A Song</div></div></div>''')
   self.assertEqual(normalize(p.tracks['1'])['work'],'Two Pieces')

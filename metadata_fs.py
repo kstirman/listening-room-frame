@@ -63,9 +63,33 @@ def open_private_directory(parent_fd, name, *, create=False, missing_message=Non
         raise ValueError(f'{name} must be a private, operator-owned real directory') from error
     try:
         _validate_private_directory(fd, name)
+        os.fchmod(fd, 0o700)
         yield fd
     finally:
         os.close(fd)
+
+
+
+def harden_private_tree(directory_fd):
+    """Restrict owned artifacts through held descriptors without following links."""
+    _validate_private_directory(directory_fd, 'Metadata storage')
+    os.fchmod(directory_fd, 0o700)
+    for name in os.listdir(directory_fd):
+        details = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        # Unused links are never traversed; callers reject links at every input
+        # and output leaf, including legacy predictable temporary names.
+        if stat.S_ISLNK(details.st_mode):
+            continue
+        if stat.S_ISDIR(details.st_mode):
+            with open_private_directory(directory_fd, name) as child:
+                harden_private_tree(child)
+        elif stat.S_ISREG(details.st_mode):
+            with open_regular_beneath(directory_fd, name) as stream:
+                if os.fstat(stream.fileno()).st_uid != os.geteuid():
+                    raise PermissionError('Metadata artifact is not owned by the current user')
+                os.fchmod(stream.fileno(), 0o600)
+        else:
+            raise ValueError('Metadata artifact must be a regular file or directory')
 
 
 def _open_parent(root_fd, relative):

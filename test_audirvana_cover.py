@@ -22,7 +22,9 @@ class AudirvanaCoverTests(unittest.TestCase):
                     'albumArtURI': url}
         with patch('bridge.layouts.current'):
             self.bridge.cover(metadata)
-        self.bridge.session.get.assert_called_once_with(url, timeout=15)
+        self.bridge.session.get.assert_called_once_with(
+            url, timeout=15, headers={'Accept-Encoding': 'identity'},
+            stream=True, allow_redirects=False)
         self.assertEqual(self.bridge.state['history'][0]['title'], 'Example')
 
     def test_reject_untrusted_or_noncover_urls(self):
